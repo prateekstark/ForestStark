@@ -11,29 +11,32 @@ Detour Surveyed obstacles (termite mounds, stumps) on a row are passed by crabbi
 Stones An auger refusal means an unsurveyed stone: shift 0.3 m along the row and retry once.
 Tender Plugs, water or battery low -> leave the row through the lane between rows, reserve a bay,
        wait in its own slot if the bay is taken, service, and come back to the same spot.
-Safety Front lidar: anything inside the travel corridor slows the robot from 5 m and stops it at
-       1.5 m (people, livestock, other robots). Other robots also share their positions.
+Safety The safety monitor sits between this node (cmd_vel_nav) and the wheels (cmd_vel). It
+       slows and stops the robot for people, animals and obstacles seen by the front and rear
+       lidars. This node decides what to do while stopped: a static obstacle still in the way
+       after detour_after_s is passed on a side the monitor reports free; a person or animal is
+       waited for, and only passed, with extra clearance, if it has stood in the path for
+       person_wait_s. With no free side it waits and flags needs_operator. Other robots share
+       their positions and are yielded to as before.
 GNSS   rtk_policy wait: stop while RTK is lost (up to rtk_wait_s), then continue on odometry.
 Battery A power model (rolling resistance, scrub, auger, hotel load, solar) gives the SoC.
 """
 import math
 
-import numpy as np
 import rclpy
 from action_msgs.msg import GoalStatus
 from fs_interfaces.action import PlantSpot, TenderService
-from fs_interfaces.msg import HeadStatus, Mission, PlantRecord, RobotState, TractionStatus
+from fs_interfaces.msg import HeadStatus, Mission, PlantRecord, RobotState, SafetyStatus, TractionStatus
 from fs_interfaces.srv import ReserveBay
 from geometry_msgs.msg import Twist
 from nav_msgs.msg import Odometry
 from rclpy.action import ActionClient
 from rclpy.node import Node
-from sensor_msgs.msg import LaserScan
 from std_msgs.msg import Float64MultiArray, String
 
 from ..control import approach_speed
 from ..geometry import wrap, yaw_from_quat
-from ..ros_common import LATCHED, SENSOR, load_site, param, pt, sim_now
+from ..ros_common import LATCHED, load_site, param, pt, sim_now
 
 G = 9.81
 
@@ -61,7 +64,6 @@ class JaalNavigator(Node):
         self.decel = param(self, "decel", 0.5)
         self.gantry = param(self, "gantry_offset", 1.65)
         self.headland = param(self, "headland_ext", 2.8)
-        self.use_lidar = param(self, "use_lidar", True)
         self.slow_d, self.stop_d = param(self, "slow_distance", 5.0), param(self, "stop_distance", 1.5)
         self.rtk_policy = param(self, "rtk_policy", "continue")
         self.rtk_wait = param(self, "rtk_wait_s", 60.0)
@@ -81,7 +83,6 @@ class JaalNavigator(Node):
 
         self.pose = None
         self.v_body = (0.0, 0.0, 0.0)
-        self.scan = None
         self.gnss = "rtk_fix"
         self.head = None
         self.peer_pos = {}
@@ -97,12 +98,15 @@ class JaalNavigator(Node):
         self.last_t = None
         self.last_cmd = Twist()
         self.bay = None
-        self.blocker = ("none", 0.0, 0.0)
+        self.blocker = ("none", 0.0, 0.0, 0.0, False)
         self.blocked_since = None
         self.detour_after = param(self, "detour_after_s", 20.0)
+        self.person_wait = param(self, "person_wait_s", 60.0)
+        self.operator_after = param(self, "operator_after_s", 120.0)
+        self.safety = None
         self.n_bays = int(param(self, "bays", 1))
 
-        self.cmd_pub = self.create_publisher(Twist, "cmd_vel", 10)
+        self.cmd_pub = self.create_publisher(Twist, "cmd_vel_nav", 10)      # through the safety monitor
         self.state_pub = self.create_publisher(RobotState, "state", 10)
         self.refill_pub = self.create_publisher(Float64MultiArray, "head/refill", 10)
         self.record_pub = self.create_publisher(PlantRecord, "/plants/records", 50)
@@ -111,7 +115,7 @@ class JaalNavigator(Node):
         self.bay_cli = self.create_client(ReserveBay, "/fleet/reserve_bay")
         self.create_subscription(Mission, "mission", self.on_mission, LATCHED)
         self.create_subscription(Odometry, "localization/odom", self.on_odom, 10)
-        self.create_subscription(LaserScan, "scan", lambda m: setattr(self, "scan", m), SENSOR)
+        self.create_subscription(SafetyStatus, "safety/status", lambda m: setattr(self, "safety", m), 10)
         self.create_subscription(String, "gnss/status", lambda m: setattr(self, "gnss", m.data), 10)
         self.create_subscription(HeadStatus, "head/status", lambda m: setattr(self, "head", m), 10)
         self.create_subscription(TractionStatus, "traction", self.on_traction, 10)
@@ -148,7 +152,7 @@ class JaalNavigator(Node):
         x, y, th = self.pose
         bx, by = -ux * 1.0, -uy * 1.0                                     # one metre back along the way we came
         back = (x + math.cos(th) * bx - math.sin(th) * by, y + math.sin(th) * bx + math.cos(th) * by)
-        self.blocker = ("lidar", 1.6 * ux, 1.6 * uy)                      # treat it as straight ahead
+        self.blocker = ("obstacle", 1.6 * ux, 1.6 * uy, 0.3, False)       # treat it as straight ahead
         cmd = Twist()
         cmd.linear.x, cmd.linear.y = ux, uy
         t = self.task
@@ -240,37 +244,21 @@ class JaalNavigator(Node):
 
     # ------------------------------------------------------------------ control
     def safety_scale(self, vx, vy):
-        """0..1 speed factor from obstacles in the direction of travel."""
+        """0..1 speed factor for fleet peers in the direction of travel (people and obstacles are
+        the safety monitor's job)."""
         sp = math.hypot(vx, vy)
-        if sp < 1e-3:
+        if sp < 1e-3 or self.pose is None:
             return 1.0
         ux, uy = vx / sp, vy / sp
         nearest = 1e9
-        if self.use_lidar and self.scan is not None:
-            s = self.scan
-            ang = s.angle_min + np.arange(len(s.ranges)) * s.angle_increment
-            r = np.asarray(s.ranges)
-            ok = np.isfinite(r) & (r > s.range_min) & (r < s.range_max)
-            px, py = 1.52 + r[ok] * np.cos(ang[ok]), r[ok] * np.sin(ang[ok])
-            body = (np.abs(px) < 1.55) & (np.abs(py) < 1.18)       # own wheels (steered) and frame
-            px, py = px[~body], py[~body]
-            along = px * ux + py * uy
-            across = np.abs(-px * uy + py * ux)
-            front = 1.45 if abs(ux) > 0.7 else 0.95
-            m = (across < 1.1) & (along > 0)
-            if m.any():
-                i = int(np.argmin(np.where(m, along, np.inf)))
-                nearest = float(along[i]) - front
-                self.blocker = ("lidar", float(px[i]), float(py[i]))
-        if self.pose is not None:
-            x, y, th = self.pose
-            for p, (qx, qy) in self.peer_pos.items():
-                dx, dy = qx - x, qy - y
-                bx, by = math.cos(-th) * dx - math.sin(-th) * dy, math.sin(-th) * dx + math.cos(-th) * dy
-                along = bx * ux + by * uy
-                if along > 0 and abs(-bx * uy + by * ux) < 2.2 and p < self.ns and along - 3.0 < nearest:
-                    nearest = along - 3.0
-                    self.blocker = (p, bx, by)
+        x, y, th = self.pose
+        for p, (qx, qy) in self.peer_pos.items():
+            dx, dy = qx - x, qy - y
+            bx, by = math.cos(-th) * dx - math.sin(-th) * dy, math.sin(-th) * dx + math.cos(-th) * dy
+            along = bx * ux + by * uy
+            if along > 0 and abs(-bx * uy + by * ux) < 2.2 and p < self.ns and along - 3.0 < nearest:
+                nearest = along - 3.0
+                self.blocker = (p, bx, by, 1.4, False)
         if nearest < self.stop_d:
             return 0.0
         if nearest < self.slow_d:
@@ -294,16 +282,43 @@ class JaalNavigator(Node):
             cmd.linear.y = math.sin(-th) * vxm + math.cos(-th) * vym
             cmd.angular.z = max(-0.5, min(0.5, 2.0 * err))
             k = self.safety_scale(cmd.linear.x, cmd.linear.y)
-            now = self.get_clock().now().nanoseconds * 1e-9
-            if k == 0.0:
+            now = sim_now(self)
+            s = self.safety
+            if k == 0.0:                                  # yielding to a fleet peer
                 self.blocked_since = self.blocked_since or now
-                if now - self.blocked_since > self.detour_after and self.detour_around(t, cmd):
+                if now - self.blocked_since > 2 * self.detour_after and self.detour_around(t, cmd):
                     return False
                 self.set_state("safety_stop")
-                if self.get_clock().now().nanoseconds * 1e-9 - getattr(self, "_blog", 0) > 10:
-                    self._blog = self.get_clock().now().nanoseconds * 1e-9
-                    self.get_logger().warning(f"safety stop: {self.blocker[0]} at ({self.blocker[1]:.2f}, {self.blocker[2]:.2f}) "
-                                              f"in the body frame, moving ({cmd.linear.x:.2f}, {cmd.linear.y:.2f})")
+            elif s is not None and s.level >= SafetyStatus.STOP:
+                self.blocked_since = None
+                self.set_state("estop" if s.level == SafetyStatus.ESTOP else f"safety_stop:{s.reason}")
+                if getattr(t, "label", "") == "detour":
+                    if getattr(self, "_wp_block", (None,))[0] is not t:
+                        self._wp_block = (t, now)            # this waypoint's own blocked timer
+                    if now - self._wp_block[1] > self.detour_after:
+                        self.get_logger().warning("detour waypoint blocked; dropping it and heading for the next one")
+                        self.task = None
+                        return False
+                if s.blocked and s.reason in ("obstacle", "person_in_path"):
+                    wait = self.person_wait if s.blocker_moving else self.detour_after
+                    if s.blocked_s > wait:
+                        self.blocker = ("person" if s.blocker_moving else "obstacle", s.blocker_x, s.blocker_y,
+                                        s.blocker_r, s.blocker_moving)
+                        if not s.blocker_moving and self.skip_blocked_spot(t, s):
+                            return False
+                        if self.detour_around(t, cmd, s.free_left, s.free_right):
+                            return False
+                    if s.blocked_s > self.operator_after:
+                        self.set_state("needs_operator")
+                if now - getattr(self, "_blog", -1e9) > 10:
+                    self._blog = now
+                    x, y, th = self.pose
+                    wx = x + math.cos(th) * s.blocker_x - math.sin(th) * s.blocker_y
+                    wy = y + math.sin(th) * s.blocker_x + math.cos(th) * s.blocker_y
+                    self.get_logger().warning(f"stopped by the safety monitor during {t.label}: {s.reason}"
+                                              + (f", {'person' if s.blocker_moving else 'object'} at ({s.blocker_x:+.1f}, "
+                                                 f"{s.blocker_y:+.1f}) = map ({wx:.1f}, {wy:.1f}) for {s.blocked_s:.0f} s; "
+                                                 f"robot at ({x:.1f}, {y:.1f}), heading {math.degrees(th):.0f} deg" if s.blocked else ""))
             else:
                 self.blocked_since = None
             cmd.linear.x *= k
@@ -311,31 +326,56 @@ class JaalNavigator(Node):
         self.publish_cmd(cmd)
         return dist < t.tol and abs(err) < 0.06
 
-    def detour_around(self, t: Task, cmd: Twist) -> bool:
-        """Blocked for a while by something that is not moving off: crab around it on the free side."""
+    def skip_blocked_spot(self, t: Task, s) -> bool:
+        """An object sits where the robot has to stand to plant: no detour reaches the spot, so skip it."""
+        if getattr(t, "label", "") not in ("drive", "return") or not self.tasks or self.tasks[0].kind != "plant":
+            return False
+        x, y, th = self.pose
+        ox = x + math.cos(th) * s.blocker_x - math.sin(th) * s.blocker_y
+        oy = y + math.sin(th) * s.blocker_x + math.cos(th) * s.blocker_y
+        if math.hypot(t.x - ox, t.y - oy) > 1.45 + max(s.blocker_r, 0.5) + 0.6:
+            return False
+        k = self.tasks.pop(0)
+        self.record_skip(k.spot, "unsurveyed obstacle on the spot")
+        self.get_logger().warning(f"spot {k.spot.id}: an obstacle stands where the robot must stop; skipped")
+        self.task = None
+        return True
+
+    def detour_around(self, t: Task, cmd: Twist, free_left=True, free_right=True) -> bool:
+        """Blocked for a while by something that is not moving off: crab around it on a free side."""
         if getattr(t, "label", "") == "detour":
             return False
-        now = self.get_clock().now().nanoseconds * 1e-9
-        if self.blocker[0] != "lidar" and now - self.blocked_since < 2 * self.detour_after:
-            return False                      # a peer usually moves off; give it longer before going round
         x, y, th = self.pose
         sp = math.hypot(cmd.linear.x, cmd.linear.y)
+        if sp < 1e-3:
+            return False
         ux, uy = cmd.linear.x / sp, cmd.linear.y / sp                        # travel direction, body frame
-        bx, by = self.blocker[1], self.blocker[2]
+        kind, bx, by, br, person = self.blocker
         blocker_left = bx * -uy + by * ux                                    # its offset to the left of travel
-        lat = -1.6 if blocker_left > 0 else 1.6                              # pass on the other side
-        ahead = (bx * ux + by * uy) + 2.5
+        half = 0.7 if abs(ux) > 0.7 else 1.45
+        # the monitor's corridor margin (0.45 m) plus clearance; the radius grows as the lidar sees more of it
+        off = max(1.6, abs(blocker_left) + max(br, 0.5) + half + (2.1 if person else 1.1))
+        sides = ([-1.0, 1.0] if blocker_left > 0 else [1.0, -1.0])          # prefer the side away from it
+        sides = [sd for sd in sides if (free_left if sd > 0 else free_right)]
+        if not sides:
+            return False
+        lat = sides[0] * off
+        front = 1.45 if abs(ux) > 0.7 else 0.7
+        # carry on until the whole body is 1.5 m past it (more for a person), then crab back square
+        ahead = (bx * ux + by * uy) + max(br, 0.5) + 2 * front + (3.0 if person else 1.5)
         def world(a, l):
             px, py = ux * a - uy * l, uy * a + ux * l
             return x + math.cos(th) * px - math.sin(th) * py, y + math.sin(th) * px + math.cos(th) * py
-        p1, p2 = world(0.0, lat), world(ahead, lat)
+        p1, p2, p3 = world(0.0, lat), world(ahead, lat), world(ahead, 0.0)
         self.tasks.insert(0, t)
         self.tasks[0:0] = [Task("goto", x=p1[0], y=p1[1], yaw=th, tol=0.2, label="detour"),
-                           Task("goto", x=p2[0], y=p2[1], yaw=th, tol=0.2, label="detour")]
+                           Task("goto", x=p2[0], y=p2[1], yaw=th, tol=0.2, label="detour"),
+                           Task("goto", x=p3[0], y=p3[1], yaw=th, tol=0.2, label="detour")]
         self.task = None
         self.blocked_since = None
-        self.get_logger().warning(f"blocked by {'a stationary ' + self.blocker[0] if self.blocker[0] != 'lidar' else 'a static object'}; detouring "
-                                  f"{abs(lat):.1f} m to the {'left' if lat > 0 else 'right'}")
+        self.get_logger().warning(f"blocked by {'a person standing' if person else 'a stationary ' + kind}; detouring "
+                                  f"{abs(lat):.1f} m to the {'left' if lat > 0 else 'right'} via ({p1[0]:.1f}, {p1[1]:.1f}), "
+                                  f"({p2[0]:.1f}, {p2[1]:.1f}), ({p3[0]:.1f}, {p3[1]:.1f})")
         return True
 
     def publish_cmd(self, cmd: Twist):

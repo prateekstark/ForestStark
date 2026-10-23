@@ -4,9 +4,10 @@
 /viz/mission  planned spots per robot, coloured by tool or planned skip
 /viz/plants   one marker per planting record: sapling, seed balls or skipped
 /viz/stability support polygon and CG of each robot with a StabilityStatus
+/viz/safety   people each robot is tracking (orange cylinders) and its safety state as text
 """
 import rclpy
-from fs_interfaces.msg import Mission, PlantRecord, StabilityStatus
+from fs_interfaces.msg import Mission, PlantRecord, SafetyStatus, StabilityStatus
 from geometry_msgs.msg import Point
 from rclpy.node import Node
 from std_msgs.msg import ColorRGBA
@@ -33,13 +34,35 @@ class VizMarkers(Node):
         self.mission_pub = self.create_publisher(MarkerArray, "/viz/mission", LATCHED)
         self.plant_pub = self.create_publisher(MarkerArray, "/viz/plants", 10)
         self.stab_pub = self.create_publisher(MarkerArray, "/viz/stability", 10)
+        self.safety_pub = self.create_publisher(MarkerArray, "/viz/safety", 10)
         self.plants = MarkerArray()
         for r in robots:
             self.create_subscription(Mission, f"/{r}/mission", self.on_mission, LATCHED)
             self.create_subscription(StabilityStatus, f"/{r}/stability", lambda m, r=r: self.on_stab(r, m), 10)
+            self.create_subscription(SafetyStatus, f"/{r}/safety/status", lambda m, r=r: self.on_safety(r, m), 10)
         self.create_subscription(PlantRecord, "/plants/records", self.on_record, 100)
         self.create_timer(2.0, lambda: self.plant_pub.publish(self.plants))
         self.publish_site()
+
+    def on_safety(self, robot, m: SafetyStatus):
+        arr = MarkerArray()
+        clear = self.marker(f"safety_{robot}", 0, Marker.CUBE, rgba((0, 0, 0), 0))
+        clear.action = Marker.DELETEALL
+        arr.markers.append(clear)
+        for k, p in enumerate(m.people):
+            c = self.marker(f"safety_{robot}", k + 1, Marker.CYLINDER, rgba((0.95, 0.55, 0.1), 0.85), (0.5, 0.5, 1.7))
+            c.pose.position.x, c.pose.position.y, c.pose.position.z = p.x, p.y, self.z(p.x, p.y) + 0.85
+            arr.markers.append(c)
+        if m.level > SafetyStatus.CLEAR or m.tool_hold:
+            text = {1: "SLOW", 2: "STOP", 3: "E-STOP"}.get(m.level, "")
+            text = " · ".join(t for t in (f"{text} {m.reason}".strip(), "TOOL HOLD" if m.tool_hold else "") if t)
+            col = (0.85, 0.2, 0.15) if m.level >= SafetyStatus.STOP else (0.95, 0.6, 0.1)
+            t = self.marker(f"safety_{robot}", 999, Marker.TEXT_VIEW_FACING, rgba(col), (0, 0, 0.5))
+            t.header.frame_id = f"{robot}/base_link"
+            t.pose.position.z = 3.2
+            t.text = text
+            arr.markers.append(t)
+        self.safety_pub.publish(arr)
 
     def marker(self, ns, mid, mtype, color, scale=(0.1, 0.1, 0.1)):
         m = Marker()

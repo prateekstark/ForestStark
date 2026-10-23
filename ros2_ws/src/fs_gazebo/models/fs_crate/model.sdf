@@ -1,0 +1,2 @@
+<?xml version='1.0'?>
+<sdf version='1.10'><model name='fs_crate'><static>true</static><link name='body'><visual name='crate'><pose>0 0 0.3 0 0 0</pose><geometry><box><size>0.9 0.6 0.6</size></box></geometry><material><ambient>0.55 0.4 0.22 1</ambient><diffuse>0.55 0.4 0.22 1</diffuse></material></visual><collision name='crate'><pose>0 0 0.3 0 0 0</pose><geometry><box><size>0.9 0.6 0.6</size></box></geometry></collision></link></model></sdf>

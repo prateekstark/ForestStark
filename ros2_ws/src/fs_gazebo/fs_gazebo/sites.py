@@ -128,6 +128,17 @@ def _include(uri, name, x, y, z=0.0, yaw=0.0):
     return f"<include><uri>model://{uri}</uri><name>{name}</name>{_pose(x, y, z, 0, 0, yaw)}</include>"
 
 
+SAFETY_PROPS = {"people": ["walker_0", "walker_1"], "crates": ["crate_0"], "park": (0.0, -400.0)}
+
+
+def safety_props():
+    """People and an unsurveyed crate, parked far off-site; the pedestrians node walks them in."""
+    px, py = SAFETY_PROPS["park"]
+    out = [_include("fs_person", n, px + 3 * k, py) for k, n in enumerate(SAFETY_PROPS["people"])]
+    out += [_include("fs_crate", n, px - 3 - 3 * k, py) for k, n in enumerate(SAFETY_PROPS["crates"])]
+    return "".join("    " + o + "\n" for o in out)
+
+
 def _box_visual(name, x, y, z, sx, sy, sz, yaw, rgb):
     r, g, b = rgb
     return (f"<visual name='{name}'>{_pose(x, y, z, 0, 0, yaw)}<geometry><box><size>{sx:.3f} {sy:.3f} {sz:.3f}"
@@ -292,6 +303,7 @@ def build_roadside(out: Path, seed=7, soil="sandy_loam", spacing=3.0):
     vis = [_box_visual("track", 0, 0, 0.006, 5.0, 11.0, 0.012, 0, (0.70, 0.64, 0.52))]
     parts.append(f"    <model name='access_track'><static>true</static>{_pose(p[0], p[1], 0, 0, 0, yaw)}"
                  f"<link name='link'>{''.join(vis)}</link></model>\n")
+    parts.append(safety_props())
     parts.append("  </world>\n</sdf>\n")
     (out / f"{name}.sdf").write_text("".join(parts))
 
@@ -370,6 +382,7 @@ def build_open_field(out: Path, seed=11, soil="sandy_loam", fleet=3):
     cows = [{"name": f"cow_{k}", "x": float(x), "y": float(y)} for k, (x, y) in enumerate([(70.0, 30.0), (30.0, 60.0)])]
     for c in cows:
         parts.append("    " + _include("fs_cow", c["name"], c["x"], c["y"], 0, rng.uniform(0, 6.28)) + "\n")
+    parts.append(safety_props())
     parts.append("  </world>\n</sdf>\n")
     (out / f"{name}.sdf").write_text("".join(parts))
 
@@ -470,6 +483,7 @@ def build_hill_slope(out: Path, seed=23, slope_deg=14.0, soil="lateritic_gravel"
     for k in range(14):
         x, y = rng.uniform(-44, 44), rng.uniform(-44, 44)
         parts.append("    " + _include("fs_shrub", f"shrub_{k}", x, y, h_at(x, y) - 0.05, rng.uniform(0, 6.28)) + "\n")
+    parts.append(safety_props())
     parts.append("  </world>\n</sdf>\n")
     (out / f"{name}.sdf").write_text("".join(parts))
 

@@ -77,7 +77,39 @@ Every plug is tracked by the `fs::PlugInventory` Gazebo system. Each carrier cel
 
 The launch's `plugs` value sets the starting load: carriers are filled to it and the rest is held in reserve (racks or magazine). `head/status.plugs_left` counts everything on board, and a tender refill (`head/refill`) refills the drums.
 
-## 2b. CAD
+## 2b. Safety
+
+Every robot runs a **safety monitor** between its planner and its wheels: navigators publish `cmd_vel_nav`, and only the monitor publishes `cmd_vel`. It drops lidar hits on the ground itself, using the machine's roll and pitch and the survey's elevation map; on Pahadi's hillside the lidar plane otherwise meets the terrain a few metres away. It then clusters the scans and tracks the clusters in the wheel-odometry frame, which stays smooth when GNSS corrections make the map pose jump. The lidars are Jaal's front and rear, Katar's boom side, and Pahadi's front.
+
+| Situation | Response |
+|---|---|
+| Person or animal within 1.2 m of the machine | Stop, in any direction, even while pivoting |
+| Person in the path, or predicted to cross it within 3 s | Stop at 2.5 m; slow from 6 m |
+| Static object in the path (stump, crate) | Stop at braking distance + 0.4 m (1.5 m at full speed, 0.5 m crawling); slow from 5 m |
+| Person within 2 m of the auger or duckbill | **Tool hold**: the auger stops mid-hole (`fs::AugerSoil` `hold`/`resume`) and every mechanism joint freezes |
+| E-stop (`/fleet/estop` true, or the operator tablet's `estop`) | Latched stop and tool hold until `release` |
+| No command for 0.4 s; localization older than 1 s; off the site | Stop (watchdog, localization, geofence) |
+
+An object counts as a person or an animal once it has covered 0.6 m within 2 s. A crate seen from a passing robot wobbles by up to half its size, and a track matched to the wrong cluster jumps; neither counts. Objects wider than 0.7 m never count as people. Neither do tracks that first appear at a surveyed stump, mound, boulder or tree, or within 0.5 m of a sapling the fleet has planted: seen side-on from a passing robot, a stump's outline shifts by up to a metre. While the robot drives or pivots, anything close to it has to cover twice the distance (1.2 m in 2 s), and beyond 10 m nothing is classified at all. Nothing counts as moving in the first 5 s after start-up.
+
+A stop is released only after the zone has been clear for 2 s (3 s for the tool), so people stepping in and out don't make the machine lurch. What happens while stopped depends on the robot:
+
+- **Jaal** goes round a static object after 20 s, on a side the monitor reports free, and stays out until its whole body is 1.5 m past it. If the object sits where Jaal must stop to plant, it skips that spot and logs the reason. A detour waypoint that stays blocked is dropped. It waits for people and animals, and passes one with extra clearance only if it has stood in the path for 60 s. If no side is free it waits and reports `needs_operator` after 120 s.
+- **Pahadi** never improvises a detour on a slope. It waits, and reports `needs_operator` after 60 s.
+- **Katar** is driven by a person. The monitor guards the boom's working strip beside the trailer and brakes the tractor if someone walks into it.
+
+The state is published on `<ns>/safety/status` (`fs_interfaces/SafetyStatus`) and drawn in RViz (`/viz/safety`: tracked people and STOP / TOOL HOLD labels).
+
+To test it, add `people:=all` to a launch: simulated people and a crate act out the scenarios against the robot (`jaal_1` for Jaal).
+
+```bash
+ros2 launch fs_bringup jaal.launch.py robots:=1 cows:=0 people:=all     # cross, tool, stand, obstacle
+ros2 launch fs_bringup pahadi.launch.py people:=cross,tool              # pick scenarios
+ros2 topic pub --once /fleet/estop std_msgs/msg/Bool "{data: true}"      # stop every robot
+ros2 run fs_autonomy operator release jaal_1                            # release one
+```
+
+## 2c. CAD
 
 ```bash
 python3 -m venv cad/.venv && cad/.venv/bin/pip install cadquery     # once
@@ -153,6 +185,8 @@ flowchart LR
 | `cmd_vel`, `joint/<j>/cmd_pos`, `auger/cmd` | commands | autonomy → Gazebo |
 | `auger/status`, `terramechanics` | JSON `String` | Gazebo soil systems → head, traction monitor |
 | `plugs/status` / `plugs/cmd` | JSON `String` / `String` | fs::PlugInventory ↔ planting_head |
+| `cmd_vel_nav` → `cmd_vel` | `Twist` | navigator → safety_monitor → Gazebo |
+| `safety/status`, `/fleet/estop` | `SafetyStatus`, `Bool` | safety_monitor → navigator, head, RViz; operator → all |
 | `plant_spot` | `PlantSpot` action | navigator → planting_head |
 | `head/status`, `stability`, `traction`, `state`, `mission` | fs_interfaces | robot → navigator, fleet, RViz |
 | `/plants/records` | `PlantRecord` | planting_head → mission_logger, viz |
@@ -212,5 +246,6 @@ Design points that came out of building and running it:
 - Stones are visual only in Gazebo; the soil map tells the auger where rock is.
 - Plugs are visuals that the inventory moves between links. They are not dynamic bodies, so a dropped or crushed plug cannot be simulated. A plug is planted by spawning a sapling model at the hole.
 - Gazebo's mass does not change as plugs and water are used. The stability monitor, and Katar's trailer-load diagram in the browser lab, account for it in software.
-- Jaal's front lidar is a single planar scan 0.30 m above ground: it sees stumps, mounds, cattle and other robots, not stones. It needs GPU rendering (`--headless-rendering` works on this machine). With `lidar:=false` the safety field only knows other robots' positions. If the wheels spin without progress (traction monitor: immobilised), the navigator backs off and goes round.
+- The safety monitor is not a certified safety function (ISO 25119 / ISO 18497). It tells people from objects only by whether they move, uses planar lidars, and has blind spots: behind Pahadi's rear module, and ahead of Katar's tractor, where the driver is responsible.
+- Jaal's lidars are single planar scans 0.30 m above ground: they see stumps, mounds, cattle and other robots, not stones. It needs GPU rendering (`--headless-rendering` works on this machine). With `lidar:=false` the safety field only knows other robots' positions. If the wheels spin without progress (traction monitor: immobilised), the navigator backs off and goes round.
 - Simulation speed: three Jaal robots run at about 0.6× real time on this laptop.

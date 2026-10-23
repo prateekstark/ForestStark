@@ -118,6 +118,8 @@
   <xacro:imu ns="${ns}" name="imu" parent="base_link" xyz="0 0 0.3"/>
   <xacro:if value="$(arg lidar)">
     <xacro:lidar2d ns="${ns}" parent="base_link" xyz="1.52 0 -0.08"/>  <!-- 0.30 m above ground: sees stumps -->
+    <!-- rear: the planting head works at the back, where people walk up to it -->
+    <xacro:lidar2d ns="${ns}" parent="base_link" xyz="-1.52 0 -0.08" rpy="0 0 3.14159" name="lidar_rear" topic="scan_rear"/>
   </xacro:if>
   <xacro:if value="$(arg inspect_cam)">
     <xacro:inspect_camera ns="${ns}" parent="base_link" xyz="-0.9 4.4 1.7" rpy="0 0.22 -1.5708"/>

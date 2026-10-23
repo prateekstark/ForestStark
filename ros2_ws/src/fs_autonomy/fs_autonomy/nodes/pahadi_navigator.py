@@ -9,6 +9,9 @@ Drive  pure pursuit on the front module (skid steer, passive articulation). Spee
        backs off and tries again.
 Stop   with the arm base abreast of the spot, then the planting head does the rest
        (IK, bore or pick or seed, plug, water, half-moon).
+Safety the safety monitor sits between this node (cmd_vel_nav) and the tracks (cmd_vel) and stops
+       the machine for people and obstacles. On a slope Pahadi never improvises a detour: it
+       keeps its course, waits, and flags needs_operator after operator_after_s.
 Tablet <ns>/operator: pause | resume | skip | estop | release. `ros2 run fs_autonomy operator pause`.
 """
 import math
@@ -17,7 +20,7 @@ import numpy as np
 import rclpy
 from action_msgs.msg import GoalStatus
 from fs_interfaces.action import PlantSpot
-from fs_interfaces.msg import Mission, RobotState, Spot, StabilityStatus, TractionStatus
+from fs_interfaces.msg import Mission, RobotState, SafetyStatus, Spot, StabilityStatus, TractionStatus
 from geometry_msgs.msg import Twist
 from nav_msgs.msg import Odometry
 from rclpy.action import ActionClient
@@ -88,7 +91,9 @@ class PahadiNavigator(Node):
         self.planted = self.skipped = 0
         self.t0 = None
 
-        self.cmd_pub = self.create_publisher(Twist, "cmd_vel", 10)
+        self.cmd_pub = self.create_publisher(Twist, "cmd_vel_nav", 10)      # through the safety monitor
+        self.safety = None
+        self.operator_after = param(self, "operator_after_s", 60.0)
         self.artic_pub = self.create_publisher(Float64, "joint/artic_yaw_joint/cmd_pos", 10)
         self.half_length = param(self, "module_offset", 0.85)
         self.state_pub = self.create_publisher(RobotState, "state", 10)
@@ -98,6 +103,7 @@ class PahadiNavigator(Node):
         self.create_subscription(StabilityStatus, "stability", lambda m: setattr(self, "stab", m), 10)
         self.create_subscription(TractionStatus, "traction", lambda m: setattr(self, "trac", m), 10)
         self.create_subscription(String, "operator", self.on_operator, 10)
+        self.create_subscription(SafetyStatus, "safety/status", lambda m: setattr(self, "safety", m), 10)
         self.create_timer(0.05, self.tick)
         self.create_timer(0.5, self.publish_state)
         self.publish_mission()
@@ -200,6 +206,14 @@ class PahadiNavigator(Node):
         if self.stab is not None and self.stab.level == StabilityStatus.WARN:
             v *= 0.5
         self.state = "drive"
+        sf = self.safety
+        if sf is not None and sf.level >= SafetyStatus.STOP:
+            # keep commanding the intended motion: the monitor judges the path against it and holds it at zero
+            self.state = "needs_operator" if sf.blocked and sf.blocked_s > self.operator_after else f"safety_stop:{sf.reason}"
+            if self.state == "needs_operator" and now - getattr(self, "_oplog", -1e9) > 30:
+                self._oplog = now
+                self.get_logger().warning(f"blocked {sf.blocked_s:.0f} s by {'a person' if sf.blocker_moving else 'an obstacle'} "
+                                          "on the contour: waiting for the operator (no detours on a slope)")
         # articulated steering: both modules on the same arc -> joint angle -2 atan(L kappa)
         gamma = max(-0.5, min(0.5, -2.0 * math.atan(self.half_length * kappa)))
         self.artic_pub.publish(Float64(data=gamma))

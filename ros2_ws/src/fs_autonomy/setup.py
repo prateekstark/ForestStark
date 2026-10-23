@@ -2,7 +2,7 @@ from setuptools import find_packages, setup
 
 NODES = ["localization", "gnss_degrader", "planting_head", "katar_driver", "katar_planter", "jaal_fleet_manager",
          "jaal_navigator", "livestock", "pahadi_navigator", "stability_monitor", "traction_monitor", "mission_logger",
-         "viz_markers"]
+         "viz_markers", "safety_monitor", "pedestrians"]
 
 setup(
     name="fs_autonomy",

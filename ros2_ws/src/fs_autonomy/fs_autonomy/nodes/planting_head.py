@@ -15,6 +15,11 @@ Action plant_spot (fs_interfaces/PlantSpot):
   log      fs_interfaces/PlantRecord on /plants/records, with the true hole position from the
            simulator so placement error is measured, not assumed.
 
+Safety: while safety/status reports tool_hold (a person within 2 m of the tool) every joint is
+held where it is, the auger is told to "hold" (spin and feed stop mid-hole), and all waits stop
+counting; when the zone has been clear for 3 s the same commands are re-sent and the cycle
+carries on.
+
 Plugs are tracked by the fs::PlugInventory system (plugs/status, plugs/cmd). A feeder thread keeps
 the next plug staged while the robot drives and bores: Katar's carousel drops one into the
 duckbill, Jaal's picker fetches one from a drum and drops it down the funnel into the duckbill.
@@ -31,7 +36,7 @@ import time
 import numpy as np
 import rclpy
 from fs_interfaces.action import PlantSpot
-from fs_interfaces.msg import HeadStatus, PlantRecord
+from fs_interfaces.msg import HeadStatus, PlantRecord, SafetyStatus
 from rclpy.action import ActionServer, CancelResponse, GoalResponse
 from rclpy.callback_groups import ReentrantCallbackGroup
 from rclpy.executors import MultiThreadedExecutor
@@ -52,6 +57,7 @@ except ImportError:            # running against hardware without the sim packag
     planting_sdf = None
 
 DONE_PHASES = ("bored", "refusal", "no_ground")
+AUGER_ACTIVE = ("lowering", "boring", "retracting")
 PLUG_BOTTOM = 0.12             # plug root ball is 0.12 m long; its top ends flush with the ground
 JAW_TIP = 0.42                 # duckbill_feed_link origin to the closed jaw tip
 TAMP_RING = 0.026              # tamp_link origin to the underside of the ring
@@ -163,7 +169,7 @@ class Mechanism:
         qt = self.lower_to("tamp_joint", "tamp_link", TAMP_RING, g - 0.01)
         if qt is not None:
             h.move({"tamp_joint": qt}, 0.015, 6.0)
-            wait_sim(h, 0.4)
+            h.wait(0.4)
             h.move({"tamp_joint": qt - 0.01 - CLEAR}, 0.03, 4.0)
         h.cmd_joint("tamp_joint", 0.0)    # the rest of the way up while the head swings back
 
@@ -194,7 +200,7 @@ class KatarMechanism(Mechanism):
             want = cur + wrap(-2 * math.pi * k / self.CUPS - cur)       # cup k over the chute (+x)
             h.move({"carousel_joint": want}, 0.02, 4.0)
             h.inv_cmd(f"pick carousel {k} duckbill")
-            wait_sim(h, 0.6, lambda: h.holding("duckbill"))
+            h.wait(0.6, lambda: h.holding("duckbill"))
         time.sleep(0.1)
 
     def targets(self, target):
@@ -219,7 +225,7 @@ class KatarMechanism(Mechanism):
 
     def deliver(self, hole):
         h = self.h
-        if not wait_sim(h, 20.0, lambda: h.holding("duckbill")):
+        if not h.wait(20.0, lambda: h.holding("duckbill")):
             raise Skip("no plug in the duckbill (carousel empty)")
         h.feedback("turret")
         h.move({"turret_joint": math.pi}, 0.03, 5.0)        # the duckbill takes the auger's place
@@ -252,7 +258,7 @@ class JaalMechanism(Mechanism):
               and h.joints.get("duckbill_feed_joint", 0.0) < 0.02):
             h.move({"finger_a_joint": 0.0, "finger_b_joint": 0.0}, 0.003, 2.0)
             h.inv_cmd("move gripper duckbill")              # down the funnel into the duckbill
-            wait_sim(h, 0.6, lambda: h.holding("duckbill"))
+            h.wait(0.6, lambda: h.holding("duckbill"))
         time.sleep(0.1)
 
     def fetch(self, drum):
@@ -270,7 +276,7 @@ class JaalMechanism(Mechanism):
         h.move({"picker_y_joint": self.REACH}, 0.004, 3.0)
         h.move({"finger_a_joint": 0.012, "finger_b_joint": 0.012}, 0.002, 2.0)
         h.inv_cmd(f"pick {drum} {i} gripper")
-        wait_sim(h, 0.4, lambda: h.holding("gripper"))
+        h.wait(0.4, lambda: h.holding("gripper"))
         h.move({"picker_z_joint": qz - 0.05}, 0.01, 2.0)    # lift out of the pocket
         h.move({"picker_y_joint": 0.0}, 0.004, 3.0)
         h.move({"picker_z_joint": self.PARK_Z}, 0.01, 6.0)
@@ -281,7 +287,7 @@ class JaalMechanism(Mechanism):
 
     def deliver(self, hole):
         h = self.h
-        if not wait_sim(h, 45.0, lambda: h.holding("duckbill")):
+        if not h.wait(45.0, lambda: h.holding("duckbill")):
             raise Skip("no plug reached the duckbill (drums empty?)")
         h.feedback("shuttle")
         h.move({"shuttle_joint": self.SHUTTLE}, 0.01, 4.0)  # the duckbill takes the auger's place
@@ -339,18 +345,18 @@ class PahadiMechanism(Mechanism):
             raise Skip(f"out of arm reach: {e}")
         if not self.arm(q):
             self.h.get_logger().warning("arm slow to reach target, continuing")
-        wait_sim(self.h, 0.8)                         # let the arm settle before cutting
+        self.h.wait(0.8)                         # let the arm settle before cutting
 
     def swap_tray(self):
         h = self.h
         h.feedback("tray_swap")
         stow = ik.ArmGeometry().stow
         h.move(dict(zip(self.NAMES[1:], stow[1:])), 0.1, 8.0)
-        wait_sim(h, self.swap_s)                      # the tray changer brings a full tray forward
+        h.wait(self.swap_s)                      # the tray changer brings a full tray forward
         n = min(self.TRAY, self.reserve)
         h.inv_cmd(f"fill tray {n}")
         self.reserve -= n
-        wait_sim(h, 2.0, lambda: h.carrier("tray").get("count", 0) > 0)
+        h.wait(2.0, lambda: h.carrier("tray").get("count", 0) > 0)
 
     def deliver(self, hole):
         h = self.h
@@ -366,7 +372,7 @@ class PahadiMechanism(Mechanism):
         self.grip_to(grasp)
         self.grip(True)
         h.inv_cmd("pick tray next gripper")
-        wait_sim(h, 0.5, lambda: h.holding("gripper"))
+        h.wait(0.5, lambda: h.holding("gripper"))
         self.grip_to(grasp, up=0.25)
         g = h.ground(*hole)
         into = (hole[0], hole[1], g - PLUG_BOTTOM + 0.06)
@@ -398,9 +404,9 @@ class PahadiMechanism(Mechanism):
             self.arm(q, 0.06, 8.0)
             for sweep in (0.25, -0.25, 0.0):
                 h.cmd_joint(self.NAMES[0], h.joints.get(self.NAMES[0], q[0]) + sweep)
-                wait_sim(h, 1.2)
+                h.wait(1.2)
         except (ik.Unreachable, Skip):
-            wait_sim(h, 5.0)
+            h.wait(5.0)
         h.spawn("halfmoon", hole[0], hole[1], h.ground(*hole), math.atan2(d[1], d[0]))
 
 
@@ -443,11 +449,15 @@ class PlantingHead(Node):
         self.track_target = None
         self.gh = None
         self.t0 = 0.0
+        self.hold = False                 # safety tool hold
+        self.desired = {}                 # last commanded joint targets, re-sent after a hold
+        self.auger_held = False
 
         self.create_subscription(JointState, "joint_states", self.on_joints, 20, callback_group=self.cb)
         self.create_subscription(String, "auger/status", self.on_auger, 20, callback_group=self.cb)
         self.create_subscription(String, "plugs/status", self.on_plugs, 10, callback_group=self.cb)
         self.create_subscription(Float64MultiArray, "head/refill", self.on_refill, 10, callback_group=self.cb)
+        self.create_subscription(SafetyStatus, "safety/status", self.on_safety, 10, callback_group=self.cb)
         self.auger_pub = self.create_publisher(String, "auger/cmd", 10)
         self.plug_pub = self.create_publisher(String, "plugs/cmd", 20)
         self.status_pub = self.create_publisher(HeadStatus, "head/status", 10)
@@ -500,17 +510,56 @@ class PlantingHead(Node):
         self.seedballs += int(v[2])
         self.get_logger().info(f"refilled: {self.mech.stock()} plugs, {self.water:.0f} L water")
 
-    def cmd_joint(self, joint: str, value: float):
+    def _pub(self, joint: str, value: float):
         with self.pub_lock:
             if joint not in self.joint_pubs:
                 self.joint_pubs[joint] = self.create_publisher(Float64, f"joint/{joint}/cmd_pos", 10)
             pub = self.joint_pubs[joint]
         pub.publish(Float64(data=float(value)))
 
+    def cmd_joint(self, joint: str, value: float):
+        self.desired[joint] = float(value)
+        if not self.hold:
+            self._pub(joint, value)
+
+    def on_safety(self, m: SafetyStatus):
+        if m.tool_hold and not self.hold:
+            self.hold = True
+            for j in list(self.desired):                  # freeze every axis where it is
+                if j in self.joints:
+                    self._pub(j, self.joints[j])
+            if self.auger.get("phase") in AUGER_ACTIVE:
+                self.auger_cmd("hold")
+                self.auger_held = True
+            self.get_logger().warning(f"tool hold during {self.phase}: person in the tool zone")
+        elif not m.tool_hold and self.hold:
+            self.hold = False
+            for j, v in list(self.desired.items()):
+                self._pub(j, v)
+            if self.auger_held:
+                self.auger_cmd("resume")
+                self.auger_held = False
+            self.get_logger().info(f"tool zone clear: resuming {self.phase}")
+
+    def wait(self, timeout: float, until=None) -> bool:
+        """wait_sim that does not count time spent in a safety hold, and never finishes during one."""
+        left, last = timeout, sim_now(self)
+        while rclpy.ok():
+            now = sim_now(self)
+            if not self.hold:
+                left -= now - last
+                if until is not None and until():
+                    return True
+                if left <= 0:
+                    return until is None
+            last = now
+            time.sleep(0.02)
+        return False
+
     def move(self, targets: dict, tol: float, timeout: float) -> bool:
         for j, v in targets.items():
             self.cmd_joint(j, v)
-        return wait_sim(self, timeout, lambda: all(abs(self.joints.get(j, 1e9) - v) < tol for j, v in targets.items()))
+        return self.wait(timeout, lambda: all(abs(self.joints.get(j, 1e9) - v) < tol for j, v in targets.items()))
 
     def auger_cmd(self, text: str):
         self.auger_pub.publish(String(data=text))
@@ -531,7 +580,7 @@ class PlantingHead(Node):
     def publish_status(self):
         s = HeadStatus()
         s.header.stamp = self.get_clock().now().to_msg()
-        s.robot, s.phase = self.ns, self.phase
+        s.robot, s.phase = self.ns, ("safety_hold" if self.hold else self.phase)
         s.phase_elapsed_s = sim_now(self) - self.phase_t
         a = self.auger
         s.auger_depth_m = float(a.get("depth", 0.0))
@@ -605,18 +654,18 @@ class PlantingHead(Node):
     def bore(self, verb: str, depth: float):
         t0 = sim_now(self)
         self.auger_cmd(f"{verb} {depth:.3f}")
-        wait_sim(self, 0.3)
-        ok = wait_sim(self, 400.0, lambda: self.auger_t > t0 and self.auger.get("phase") in DONE_PHASES)
+        self.wait(0.3)
+        ok = self.wait(400.0, lambda: self.auger_t > t0 and self.auger.get("phase") in DONE_PHASES)
         return self.auger.get("phase") if ok else "timeout"
 
     def retract(self):
         t0 = sim_now(self)
         self.auger_cmd("retract")
-        wait_sim(self, 20.0, lambda: self.auger_t > t0 + 0.2 and self.auger.get("phase") == "idle")
+        self.wait(20.0, lambda: self.auger_t > t0 + 0.2 and self.auger.get("phase") == "idle")
 
     def seed(self, hole):
         self.feedback("seed")
-        wait_sim(self, 4.0)
+        self.wait(4.0)
         self.seedballs -= 3
         self.spawn("seedballs", hole[0], hole[1], self.ground(*hole))
 
@@ -685,7 +734,7 @@ class PlantingHead(Node):
                     self.plugs -= 1
                     self.feedback("water")
                     dose = min(self.dose, self.water)
-                    wait_sim(self, dose / self.pump)
+                    self.wait(dose / self.pump)
                     self.water -= dose
                     rec.water_l = dose
                     rec.outcome, rec.tool = "planted", tool

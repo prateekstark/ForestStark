@@ -10,7 +10,9 @@ Arguments
   rock_cover  share of ground too thin for the auger, 0-0.8 (0.25)
   side        downhill | uphill: which side the arm plants (stability trade-off)
   rows, row_spacing, spacing, half_moon, speed, max_spots (0 = all)
-  headless, rtf, rviz, seed, lidar
+  lidar       front safety lidar (true)
+  people      safety scenarios: all (= cross,tool,stand) or a list; off by default
+  headless, rtf, rviz, seed, inspect
 """
 import os
 
@@ -23,7 +25,7 @@ from fs_bringup import sim
 
 ARGS = {"slope": "14", "soil": "lateritic_gravel", "rock_cover": "0.25", "side": "downhill", "rows": "3",
         "row_spacing": "4.0", "spacing": "2.5", "half_moon": "true", "speed": "0.35", "max_spots": "0",
-        "headless": "false", "rtf": "1.0", "rviz": "true", "seed": "23", "lidar": "false", "log_dir": "", "inspect": "false"}
+        "headless": "false", "rtf": "1.0", "rviz": "true", "seed": "23", "lidar": "true", "log_dir": "", "inspect": "false", "people": ""}
 
 CONTACTS = [f"{m}{s}{i}_link" for m in "fr" for s in "lr" for i in (1, 2, 3)]
 
@@ -43,7 +45,8 @@ def setup(context):
     actions = sim.gazebo(site_dir / "hill_slope.sdf", sim.on(c["headless"]), float(c["rtf"]))
     actions += sim.spawn_robot("pahadi", ns, site_dir, site, lidar, inspect=sim.on(c["inspect"]))
     actions.append(sim.bridge(site["name"], sim.bridge_entries("pahadi", ns, lidar), site_dir))
-    actions += sim.robot_core("pahadi", ns, site_file, site["name"], head, seed=seed)
+    actions += sim.robot_core("pahadi", ns, site_file, site["name"], head, seed=seed, lidar=lidar)
+    actions += sim.people(site["name"], ns, site_file, "cross,tool,stand" if c["people"] == "all" else c["people"])
     actions += [
         Node(package="fs_autonomy", executable="stability_monitor", namespace=ns, output="screen",
              parameters=[{**common, "contact_links": CONTACTS,

@@ -39,7 +39,7 @@ class KatarDriver(Node):
         self.hint = None
         self.done = False
         self.last = None
-        self.pub = self.create_publisher(Twist, "cmd_vel", 10)
+        self.pub = self.create_publisher(Twist, "cmd_vel_nav", 10)          # through the safety monitor (boom strip)
         self.done_pub = self.create_publisher(String, "driver/state", 10)
         self.create_subscription(Odometry, "ground_truth", self.on_gt, 10)
         self.create_subscription(Float64, "speed_limit", self.on_limit, 10)

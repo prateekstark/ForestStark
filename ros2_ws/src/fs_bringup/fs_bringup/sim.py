@@ -28,6 +28,8 @@ JOINT_CMDS = {"katar": ["sled_joint", "carriage_joint", "turret_joint", "carouse
                        "finger_a_joint", "finger_b_joint", "shuttle_joint"] + DUCKBILL,
               "pahadi": ["artic_yaw_joint", "arm_yaw_joint", "arm_shoulder_joint", "arm_elbow_joint", "arm_wrist_joint",
                          "finger_l_joint", "finger_r_joint"]}
+SCANS = {"jaal": ["scan", "scan_rear"], "katar": ["scan"], "pahadi": ["scan"]}   # planar lidars per robot
+LIDAR_ALWAYS = {"katar"}                       # Katar's boom-side lidar is part of its safety system
 BASE_HEIGHT = {"katar": 0.72, "jaal": 0.38, "pahadi": 0.21}
 GNSS_LEVER = {"katar": [0.1, 0.0, 2.0], "jaal": [1.15, 0.0, 2.95], "pahadi": [-0.45, -0.26, 1.27]}  # base_link -> antenna
 
@@ -115,8 +117,8 @@ def bridge_entries(kind: str, ns: str, lidar: bool) -> list:
            ("terramechanics", "terramechanics", "std_msgs/msg/String", "gz.msgs.StringMsg")]
     if kind == "pahadi":
         g2r.append(("imu_rear", "imu_rear", "sensor_msgs/msg/Imu", "gz.msgs.IMU"))
-    if lidar:
-        g2r.append(("scan", "scan", "sensor_msgs/msg/LaserScan", "gz.msgs.LaserScan"))
+    if lidar or kind in LIDAR_ALWAYS:
+        g2r += [(t, t, "sensor_msgs/msg/LaserScan", "gz.msgs.LaserScan") for t in SCANS[kind]]
     r2g = [("cmd_vel", "cmd_vel", "geometry_msgs/msg/Twist", "gz.msgs.Twist"),
            ("auger/cmd", "auger/cmd", "std_msgs/msg/String", "gz.msgs.StringMsg"),
            ("plugs/cmd", "plugs/cmd", "std_msgs/msg/String", "gz.msgs.StringMsg")]
@@ -143,10 +145,14 @@ def bridge(world: str, entries: list, out_dir: Path):
 
 
 def robot_core(kind: str, ns: str, site_file: Path, world: str, head: dict, gnss_mode: str = "rtk",
-               dropouts: float = 0.0, seed: int = 1):
-    """Nodes every robot runs: GNSS model, localization, planting head, traction monitor."""
+               dropouts: float = 0.0, seed: int = 1, lidar: bool = True, peers=()):
+    """Nodes every robot runs: GNSS model, localization, planting head, traction monitor, and the
+    safety monitor that gates cmd_vel_nav -> cmd_vel."""
     common = {"site_file": str(site_file), "robot": ns, "use_sim_time": True}
+    scans = SCANS[kind] if (lidar or kind in LIDAR_ALWAYS) else [""]
     return [
+        Node(package="fs_autonomy", executable="safety_monitor", namespace=ns, output="screen",
+             parameters=[{**common, "robot_type": kind, "scans": scans, "peers": list(peers) or [""]}]),
         Node(package="fs_autonomy", executable="gnss_degrader", namespace=ns, output="screen",
              parameters=[{**common, "mode": gnss_mode, "dropouts_per_hour": float(dropouts), "seed": seed}]),
         Node(package="fs_autonomy", executable="localization", namespace=ns, output="screen",
@@ -156,6 +162,17 @@ def robot_core(kind: str, ns: str, site_file: Path, world: str, head: dict, gnss
         Node(package="fs_autonomy", executable="traction_monitor", namespace=ns, output="screen",
              parameters=[common]),
     ]
+
+
+def people(world: str, robot: str, site_file: Path, events: str):
+    """Simulated people and a crate that test the safety behaviour (launch argument people:=...)."""
+    if not events:
+        return []
+    if events == "all":
+        events = "cross,tool,stand,obstacle"
+    return [Node(package="fs_autonomy", executable="pedestrians", output="screen",
+                 parameters=[{"site_file": str(site_file), "world": world, "robot": robot, "events": events,
+                              "use_sim_time": True}])]
 
 
 def common_nodes(site_file: Path, rviz: bool, rviz_config: str, log_dir: str = ""):

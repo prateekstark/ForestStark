@@ -13,6 +13,7 @@
 // is modelled. Re-boring an existing hole costs little energy.
 //
 // Commands (gz.msgs.StringMsg on <cmd_topic>):  "bore 0.30" | "pick 0.30" | "retract" | "stop"
+//   | "hold" (safety: spin and feed stop where they are) | "resume" (carry on with the held phase)
 // Status   (gz.msgs.StringMsg JSON on <status_topic>, <publish_rate> Hz).
 #include <gz/msgs/stringmsg.pb.h>
 
@@ -174,7 +175,7 @@ public:
   }
 
 private:
-  enum class Phase { Idle, Lowering, Boring, Bored, Refusal, NoGround, Retracting, Stopped };
+  enum class Phase { Idle, Lowering, Boring, Bored, Refusal, NoGround, Retracting, Stopped, Held };
 
   static const char *Name(Phase p)
   {
@@ -188,13 +189,14 @@ private:
       case Phase::NoGround: return "no_ground";
       case Phase::Retracting: return "retracting";
       case Phase::Stopped: return "stopped";
+      case Phase::Held: return "held";
     }
     return "?";
   }
 
   void SetPhase(Phase p)
   {
-    if ((phase_ == Phase::Boring) && p != Phase::Boring)
+    if ((phase_ == Phase::Boring) && p != Phase::Boring && p != Phase::Held)
       holes_.push_back({holeX_, holeY_, depth_});
     phase_ = p;
     phaseStart_ = simTime_;
@@ -227,6 +229,14 @@ private:
     }
     else if (verb == "retract") SetPhase(Phase::Retracting);
     else if (verb == "stop") SetPhase(Phase::Stopped);
+    else if (verb == "hold")
+    {
+      if (phase_ != Phase::Held) { heldFrom_ = phase_; SetPhase(Phase::Held); }
+    }
+    else if (verb == "resume")
+    {
+      if (phase_ == Phase::Held) { phase_ = heldFrom_; phaseStart_ = simTime_; }
+    }
     else gzwarn << "[fs::AugerSoil] unknown command '" << cmd << "'\n";
   }
 
@@ -280,6 +290,7 @@ private:
   double freeSpeed_{0.25}, retractSpeed_{0.3}, maxStroke_{1.0}, rockEnergy_{45e6}, pickEfficiency_{0.5};
   bool resolved_{false}, warned_{false}, pick_{false}, inRock_{false};
   Phase phase_{Phase::Idle};
+  Phase heldFrom_{Phase::Idle};
   double simTime_{0}, phaseStart_{0}, lastPub_{-1}, publishPeriod_{0.05};
   double target_{0.3}, depth_{0}, energy_{0}, holeX_{0}, holeY_{0}, holeTop_{0};
   double rockDepth_{0}, moisture_{0};

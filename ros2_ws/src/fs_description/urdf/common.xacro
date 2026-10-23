@@ -128,15 +128,16 @@
   </xacro:macro>
 
   <!-- Planar safety lidar. Needs rendering (gpu_lidar); off with lidar:=false. -->
-  <xacro:macro name="lidar2d" params="ns parent xyz fov:=4.71 samples:=540 max_range:=20.0">
-    <joint name="lidar_joint" type="fixed"><parent link="${parent}"/><child link="lidar_link"/><origin xyz="${xyz}"/></joint>
-    <link name="lidar_link">
+  <!-- Planar lidar. name/topic let one robot carry several (Jaal front and rear). -->
+  <xacro:macro name="lidar2d" params="ns parent xyz rpy:='0 0 0' name:=lidar topic:=scan fov:=4.71 samples:=540 max_range:=20.0">
+    <joint name="${name}_joint" type="fixed"><parent link="${parent}"/><child link="${name}_link"/><origin xyz="${xyz}" rpy="${rpy}"/></joint>
+    <link name="${name}_link">
       <visual><geometry><cylinder radius="0.05" length="0.07"/></geometry><material name="fs_graphite"/></visual>
     </link>
-    <gazebo reference="lidar_link">
-      <sensor name="lidar" type="gpu_lidar">
-        <always_on>1</always_on><update_rate>10</update_rate><topic>/model/${ns}/scan</topic>
-        <gz_frame_id>${ns}/lidar_link</gz_frame_id>
+    <gazebo reference="${name}_link">
+      <sensor name="${name}" type="gpu_lidar">
+        <always_on>1</always_on><update_rate>10</update_rate><topic>/model/${ns}/${topic}</topic>
+        <gz_frame_id>${ns}/${name}_link</gz_frame_id>
         <lidar>
           <scan><horizontal><samples>${samples}</samples><resolution>1</resolution>
             <min_angle>${-fov/2}</min_angle><max_angle>${fov/2}</max_angle></horizontal></scan>

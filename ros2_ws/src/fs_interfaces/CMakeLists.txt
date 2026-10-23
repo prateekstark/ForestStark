@@ -14,6 +14,7 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/StabilityStatus.msg"
   "msg/TractionStatus.msg"
   "msg/RobotState.msg"
+  "msg/SafetyStatus.msg"
   "srv/ReserveBay.srv"
   "action/PlantSpot.action"
   "action/TenderService.action"

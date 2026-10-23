@@ -12,7 +12,7 @@
 <robot name="pahadi" xmlns:xacro="http://www.ros.org/wiki/xacro">
   <xacro:arg name="ns" default="pahadi"/>
   <xacro:arg name="soil_map" default=""/>
-  <xacro:arg name="lidar" default="false"/>
+  <xacro:arg name="lidar" default="true"/>
   <xacro:arg name="gnss_sigma" default="0.02"/>
   <xacro:property name="ns" value="$(arg ns)"/>
   <xacro:property name="WR" value="0.21"/>

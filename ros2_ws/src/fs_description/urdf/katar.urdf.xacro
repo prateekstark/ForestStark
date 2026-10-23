@@ -105,6 +105,9 @@
   <xacro:auger_head robot="${R}" parent="turret_link" xyz="0.2 0 -0.06" length="0.95" stroke="1.3"/>
   <xacro:duckbill_head robot="${R}" parent="turret_link" xyz="-0.2 0 -0.06" stroke="1.6" tamp_xyz="-0.2 0 -0.20" tamp_stroke="1.6"/>
 
+  <!-- boom-side lidar, 0.3 m above ground, watching the strip the boom works in -->
+  <xacro:lidar2d ns="${ns}" parent="trailer_link" xyz="-1.5 1.08 -0.2" rpy="0 0 1.5708"/>
+
   <xacro:if value="$(arg inspect_cam)">
     <!-- rides on the boom carriage so the head stays in frame -->
     <xacro:inspect_camera ns="${ns}" parent="carriage_link" xyz="0.0 3.0 -0.8" rpy="0 0.0 -1.5708" hfov="1.2"/>

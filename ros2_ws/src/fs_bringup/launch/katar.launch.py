@@ -13,7 +13,8 @@ Arguments
   surveyed      utility survey available (true); false shows buried-cable strikes
   gnss          rtk | standard | none (odometry only)
   soil          verge soil: sandy_loam | dry_sand | clayey_soil | heavy_clay | lateritic_gravel
-  headless, rtf, rviz, seed
+  people        safety scenarios: all (= tool,stand:2.5) or a list such as tool,cross; off by default
+  headless, rtf, rviz, seed, inspect
 """
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, OpaqueFunction, SetEnvironmentVariable
@@ -24,7 +25,7 @@ from fs_bringup import sim
 
 ARGS = {"mode": "stop_and_go", "spacing": "3.0", "speed_kmh": "2.5", "weave_m": "0.25", "reaction_s": "0.8",
         "surveyed": "true", "gnss": "rtk", "soil": "sandy_loam", "rail_min": "-1.8", "rail_max": "0.6",
-        "headless": "false", "rtf": "1.0", "rviz": "true", "seed": "7", "log_dir": "", "inspect": "false"}
+        "headless": "false", "rtf": "1.0", "rviz": "true", "seed": "7", "log_dir": "", "inspect": "false", "people": ""}
 
 
 def setup(context):
@@ -41,6 +42,7 @@ def setup(context):
     actions += sim.spawn_robot("katar", ns, site_dir, site, lidar=False, inspect=sim.on(c["inspect"]))
     actions.append(sim.bridge(site["name"], sim.bridge_entries("katar", ns, lidar=False), site_dir))
     actions += sim.robot_core("katar", ns, site_file, site["name"], head, gnss_mode=c["gnss"], seed=seed)
+    actions += sim.people(site["name"], ns, site_file, "tool,stand:2.5" if c["people"] == "all" else c["people"])
     actions += [
         Node(package="fs_autonomy", executable="katar_driver", namespace=ns, output="screen",
              parameters=[{**common, "speed_kmh": float(c["speed_kmh"]), "weave_m": float(c["weave_m"]),

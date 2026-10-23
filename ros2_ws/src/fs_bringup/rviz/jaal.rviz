@@ -62,6 +62,17 @@ Visualization Manager:
       Reliability Policy: Reliable
       Value: /viz/stability
     Value: true
+  - Class: rviz_default_plugins/MarkerArray
+    Enabled: true
+    Name: Safety
+    Namespaces: {}
+    Topic:
+      Depth: 5
+      Durability Policy: Volatile
+      History Policy: Keep Last
+      Reliability Policy: Reliable
+      Value: /viz/safety
+    Value: true
   - Class: rviz_default_plugins/RobotModel
     Enabled: true
     Name: jaal_1

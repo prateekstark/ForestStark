@@ -13,7 +13,8 @@ Arguments
   stock_plugs   plugs on the tender at the start (demo 36: the third robot waits for a restock)
   rtk_policy    continue | wait (stop while RTK is lost);  dropouts: random RTK losses per hour
   cows          cattle wandering in the field (2)
-  lidar         front safety lidar (true; needs GPU rendering)
+  lidar         front and rear safety lidars (true; needs GPU rendering)
+  people        safety scenarios for jaal_1: all (= cross,tool,stand,obstacle) or a list; off by default
   headless, rtf, rviz, seed, soil
 """
 import os
@@ -27,7 +28,7 @@ from fs_bringup import sim
 
 ARGS = {"robots": "3", "field": "demo", "pattern": "square", "spacing": "3.0", "plugs": "", "stock_plugs": "",
         "bays": "1", "rtk_policy": "continue", "dropouts": "0", "cows": "2", "lidar": "true", "cruise": "1.0",
-        "headless": "false", "rtf": "1.0", "rviz": "true", "seed": "11", "soil": "sandy_loam", "log_dir": "", "inspect": "false"}
+        "headless": "false", "rtf": "1.0", "rviz": "true", "seed": "11", "soil": "sandy_loam", "log_dir": "", "inspect": "false", "people": ""}
 
 
 def setup(context):
@@ -51,7 +52,8 @@ def setup(context):
         actions += sim.spawn_robot("jaal", ns, site_dir, site, lidar, inspect=sim.on(c["inspect"]))
         entries += sim.bridge_entries("jaal", ns, lidar)
         head = {"plugs": plugs, "water_l": 250.0, "water_dose_l": 0.5, "pump_lps": 0.4, "hole_depth": 0.25}
-        actions += sim.robot_core("jaal", ns, site_file, world, head, dropouts=float(c["dropouts"]), seed=seed + i)
+        actions += sim.robot_core("jaal", ns, site_file, world, head, dropouts=float(c["dropouts"]), seed=seed + i,
+                                  lidar=lidar, peers=robots)
         actions.append(Node(package="fs_autonomy", executable="jaal_navigator", namespace=ns, output="screen",
                             parameters=[{"site_file": str(site_file), "robot": ns, "robots": robots,
                                          "field": c["field"], "use_lidar": lidar, "rtk_policy": c["rtk_policy"],
@@ -68,6 +70,7 @@ def setup(context):
              parameters=[{"site_file": str(site_file), "world": world, "count": int(c["cows"]), "field": c["field"],
                           "seed": seed, "use_sim_time": True}]),
     ]
+    actions += sim.people(world, robots[0], site_file, c["people"])
     actions += sim.common_nodes(site_file, sim.on(c["rviz"]), "jaal.rviz", out_dir)
     return actions
 
