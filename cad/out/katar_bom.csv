@@ -1,0 +1,132 @@
+robot,link,part,material,volume_L,est_mass_kg,note
+katar,base_link,chassis,graphite,449.897,423.8,
+katar,base_link,hood,yellow,844.137,198.79,
+katar,base_link,grille,graphite,23.664,55.73,
+katar,base_link,lamps,white,1.008,1.21,
+katar,base_link,exhaust,graphite,6.283,4.93,
+katar,base_link,fenders,yellow,68.907,27.05,
+katar,base_link,cab_floor,graphite,120.0,56.52,
+katar,base_link,roof,yellow,140.29,220.26,
+katar,base_link,rops,graphite,21.024,33.01,
+katar,base_link,windscreen,glass,21.6,54.0,
+katar,base_link,seat,graphite,37.352,87.96,
+katar,base_link,steering,graphite,1.524,11.96,
+katar,base_link,beacon,orange,1.847,2.22,
+katar,base_link,drawbar,steel,8.4,65.94,
+katar,base_link,gnss_antenna,graphite,0.763,5.99,
+katar,driver_link,legs,graphite,36.736,86.51,
+katar,driver_link,torso,cloth,56.291,16.89,
+katar,driver_link,arms,cloth,28.0,5.6,
+katar,driver_link,head,skin,6.371,3.19,
+katar,rear_left_wheel_link,tyre,rubber,280.664,112.97,
+katar,rear_left_wheel_link,rim,yellow,91.772,180.1,
+katar,front_left_steer_link,knuckle,graphite,2.808,22.04,
+katar,front_left_wheel_link,tyre,rubber,55.524,22.35,
+katar,front_left_wheel_link,rim,yellow,18.737,36.77,
+katar,rear_right_wheel_link,tyre,rubber,280.664,112.97,
+katar,rear_right_wheel_link,rim,yellow,91.772,180.1,
+katar,front_right_steer_link,knuckle,graphite,2.808,22.04,
+katar,front_right_wheel_link,tyre,rubber,55.524,22.35,
+katar,front_right_wheel_link,rim,yellow,18.737,36.77,
+katar,trailer_link,drawbar,steel,10.0,15.7,
+katar,trailer_link,deck,graphite,1036.0,406.63,
+katar,trailer_link,side_rails,yellow,35.52,83.65,
+katar,trailer_link,axles,steel,23.808,56.07,
+katar,trailer_link,tank,blue,1140.398,21.67,"1,000 L water"
+katar,trailer_link,tank_filler,white,3.619,4.34,
+katar,trailer_link,tank_saddles,graphite,43.2,101.74,
+katar,trailer_link,boom_rail,steel,17.92,42.2,
+katar,trailer_link,shade_net,shade,88.0,26.4,
+katar,trailer_link,pump,blue,18.638,5.31,0.5 L/s dosing pump
+katar,trailer_link,tray_L480_0,tray,12.086,11.48,
+katar,trailer_link,canopy_L480_0,leaf,31.096,0.93,50 seedlings
+katar,trailer_link,tray_L480_1,tray,12.086,11.48,
+katar,trailer_link,canopy_L480_1,leaf,31.096,0.93,50 seedlings
+katar,trailer_link,tray_L480_2,tray,12.086,11.48,
+katar,trailer_link,canopy_L480_2,leaf,31.096,0.93,50 seedlings
+katar,trailer_link,tray_L480_3,tray,12.086,11.48,
+katar,trailer_link,canopy_L480_3,leaf,31.096,0.93,50 seedlings
+katar,trailer_link,tray_L1000_0,tray,12.086,11.48,
+katar,trailer_link,canopy_L1000_0,leaf,31.096,0.93,50 seedlings
+katar,trailer_link,tray_L1000_1,tray,12.086,11.48,
+katar,trailer_link,canopy_L1000_1,leaf,31.096,0.93,50 seedlings
+katar,trailer_link,tray_L1000_2,tray,12.086,11.48,
+katar,trailer_link,canopy_L1000_2,leaf,31.096,0.93,50 seedlings
+katar,trailer_link,tray_L1000_3,tray,12.086,11.48,
+katar,trailer_link,canopy_L1000_3,leaf,31.096,0.93,50 seedlings
+katar,trailer_link,tray_L1520_0,tray,12.086,11.48,
+katar,trailer_link,canopy_L1520_0,leaf,31.096,0.93,50 seedlings
+katar,trailer_link,tray_L1520_1,tray,12.086,11.48,
+katar,trailer_link,canopy_L1520_1,leaf,31.096,0.93,50 seedlings
+katar,trailer_link,tray_L1520_2,tray,12.086,11.48,
+katar,trailer_link,canopy_L1520_2,leaf,31.096,0.93,50 seedlings
+katar,trailer_link,tray_L1520_3,tray,12.086,11.48,
+katar,trailer_link,canopy_L1520_3,leaf,31.096,0.93,50 seedlings
+katar,trailer_link,tray_R480_0,tray,12.086,11.48,
+katar,trailer_link,canopy_R480_0,leaf,31.096,0.93,50 seedlings
+katar,trailer_link,tray_R480_1,tray,12.086,11.48,
+katar,trailer_link,canopy_R480_1,leaf,31.096,0.93,50 seedlings
+katar,trailer_link,tray_R480_2,tray,12.086,11.48,
+katar,trailer_link,canopy_R480_2,leaf,31.096,0.93,50 seedlings
+katar,trailer_link,tray_R480_3,tray,12.086,11.48,
+katar,trailer_link,canopy_R480_3,leaf,31.096,0.93,50 seedlings
+katar,trailer_link,tray_R1000_0,tray,12.086,11.48,
+katar,trailer_link,canopy_R1000_0,leaf,31.096,0.93,50 seedlings
+katar,trailer_link,tray_R1000_1,tray,12.086,11.48,
+katar,trailer_link,canopy_R1000_1,leaf,31.096,0.93,50 seedlings
+katar,trailer_link,tray_R1000_2,tray,12.086,11.48,
+katar,trailer_link,canopy_R1000_2,leaf,31.096,0.93,50 seedlings
+katar,trailer_link,tray_R1000_3,tray,12.086,11.48,
+katar,trailer_link,canopy_R1000_3,leaf,31.096,0.93,50 seedlings
+katar,trailer_link,tray_R1520_0,tray,12.086,11.48,
+katar,trailer_link,canopy_R1520_0,leaf,31.096,0.93,50 seedlings
+katar,trailer_link,tray_R1520_1,tray,12.086,11.48,
+katar,trailer_link,canopy_R1520_1,leaf,31.096,0.93,50 seedlings
+katar,trailer_link,tray_R1520_2,tray,12.086,11.48,
+katar,trailer_link,canopy_R1520_2,leaf,31.096,0.93,50 seedlings
+katar,trailer_link,tray_R1520_3,tray,12.086,11.48,
+katar,trailer_link,canopy_R1520_3,leaf,31.096,0.93,50 seedlings
+katar,trailer_link,racks,steel,213.762,201.36,
+katar,trailer_link,shade_posts,steel,11.52,22.61,
+katar,loader_link,legs,graphite,36.736,86.51,
+katar,loader_link,torso,cloth,56.291,16.89,
+katar,loader_link,arms,cloth,28.0,5.6,
+katar,loader_link,head,skin,6.371,3.19,
+katar,trailer_fl_wheel_link,tyre,rubber,60.206,24.23,
+katar,trailer_fl_wheel_link,rim,graphite,20.298,39.84,
+katar,trailer_fr_wheel_link,tyre,rubber,60.206,24.23,
+katar,trailer_fr_wheel_link,rim,graphite,20.298,39.84,
+katar,trailer_rl_wheel_link,tyre,rubber,60.206,24.23,
+katar,trailer_rl_wheel_link,rim,graphite,20.298,39.84,
+katar,trailer_rr_wheel_link,tyre,rubber,60.206,24.23,
+katar,trailer_rr_wheel_link,rim,graphite,20.298,39.84,
+katar,sled_link,post,yellow,16.56,26.0,
+katar,sled_link,beam,yellow,39.6,62.17,
+katar,sled_link,brace,steel,3.294,7.76,
+katar,sled_link,rail_shoes,graphite,3.276,25.72,
+katar,sled_link,hose_track,hose,12.0,3.96,
+katar,carriage_link,carriage,yellow,30.617,72.1,
+katar,carriage_link,motor,graphite,5.089,19.98,
+katar,carriage_link,turret_drive,graphite,2.281,8.95,
+katar,carriage_link,carousel_arm,yellow,1.92,4.52,
+katar,carriage_link,chute,alu,0.265,0.72,plug drop chute
+katar,carriage_link,carousel_motor,graphite,0.573,4.49,
+katar,carousel_link,plate,alu,2.033,5.49,
+katar,carousel_link,cups,orange,1.182,1.42,12 plug cups
+katar,carousel_link,hub,steel,0.302,2.37,
+katar,turret_link,disc,yellow,9.852,77.34,
+katar,turret_link,auger_station,graphite,3.054,9.59,
+katar,turret_link,duckbill_station,graphite,2.413,7.58,
+katar,auger_feed_link,hydraulic_motor,graphite,2.827,13.32,
+katar,auger_feed_link,feed_cylinder,steel,1.696,6.66,
+katar,auger_link,auger_shaft,steel,1.135,8.91,
+katar,auger_link,auger_flight,steel,0.344,2.7,
+katar,auger_link,auger_tip,graphite,0.043,0.33,
+katar,duckbill_feed_link,housing,graphite,0.533,4.18,
+katar,duckbill_feed_link,hinge_brackets,steel,0.24,1.88,
+katar,duckbill_feed_link,jaw_actuators,steel,0.064,0.5,
+katar,duckbill_feed_link,water_nozzle,brass,0.053,0.45,
+katar,duckbill_feed_link,feed_rod,steel,1.064,5.01,
+katar,jaw_l_link,jaw,steel,0.087,0.68,
+katar,jaw_r_link,jaw,steel,0.087,0.68,
+katar,tamp_link,ring,graphite,0.642,5.04,

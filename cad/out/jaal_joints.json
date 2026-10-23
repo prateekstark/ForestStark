@@ -1,0 +1,536 @@
+{
+ "joints": {
+  "steer_fl_link": {
+   "name": "steer_fl_joint",
+   "parent": "base_link",
+   "type": "revolute",
+   "xyz": [
+    0.95,
+    0.83,
+    0.25
+   ],
+   "rpy": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "axis": [
+    0.0,
+    0.0,
+    1.0
+   ],
+   "lower": -2.0,
+   "upper": 2.0
+  },
+  "wheel_fl_link": {
+   "name": "wheel_fl_joint",
+   "parent": "steer_fl_link",
+   "type": "continuous",
+   "xyz": [
+    0.0,
+    0.0,
+    -0.25
+   ],
+   "rpy": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "axis": [
+    0.0,
+    1.0,
+    0.0
+   ],
+   "lower": 0.0,
+   "upper": 0.0
+  },
+  "steer_fr_link": {
+   "name": "steer_fr_joint",
+   "parent": "base_link",
+   "type": "revolute",
+   "xyz": [
+    0.95,
+    -0.83,
+    0.25
+   ],
+   "rpy": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "axis": [
+    0.0,
+    0.0,
+    1.0
+   ],
+   "lower": -2.0,
+   "upper": 2.0
+  },
+  "wheel_fr_link": {
+   "name": "wheel_fr_joint",
+   "parent": "steer_fr_link",
+   "type": "continuous",
+   "xyz": [
+    0.0,
+    0.0,
+    -0.25
+   ],
+   "rpy": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "axis": [
+    0.0,
+    1.0,
+    0.0
+   ],
+   "lower": 0.0,
+   "upper": 0.0
+  },
+  "steer_rl_link": {
+   "name": "steer_rl_joint",
+   "parent": "base_link",
+   "type": "revolute",
+   "xyz": [
+    -0.95,
+    0.83,
+    0.25
+   ],
+   "rpy": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "axis": [
+    0.0,
+    0.0,
+    1.0
+   ],
+   "lower": -2.0,
+   "upper": 2.0
+  },
+  "wheel_rl_link": {
+   "name": "wheel_rl_joint",
+   "parent": "steer_rl_link",
+   "type": "continuous",
+   "xyz": [
+    0.0,
+    0.0,
+    -0.25
+   ],
+   "rpy": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "axis": [
+    0.0,
+    1.0,
+    0.0
+   ],
+   "lower": 0.0,
+   "upper": 0.0
+  },
+  "steer_rr_link": {
+   "name": "steer_rr_joint",
+   "parent": "base_link",
+   "type": "revolute",
+   "xyz": [
+    -0.95,
+    -0.83,
+    0.25
+   ],
+   "rpy": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "axis": [
+    0.0,
+    0.0,
+    1.0
+   ],
+   "lower": -2.0,
+   "upper": 2.0
+  },
+  "wheel_rr_link": {
+   "name": "wheel_rr_joint",
+   "parent": "steer_rr_link",
+   "type": "continuous",
+   "xyz": [
+    0.0,
+    0.0,
+    -0.25
+   ],
+   "rpy": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "axis": [
+    0.0,
+    1.0,
+    0.0
+   ],
+   "lower": 0.0,
+   "upper": 0.0
+  },
+  "drum_f_link": {
+   "name": "drum_f_joint",
+   "parent": "base_link",
+   "type": "continuous",
+   "xyz": [
+    0.55,
+    0.0,
+    0.5
+   ],
+   "rpy": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "axis": [
+    0.0,
+    0.0,
+    1.0
+   ],
+   "lower": 0.0,
+   "upper": 0.0
+  },
+  "drum_r_link": {
+   "name": "drum_r_joint",
+   "parent": "base_link",
+   "type": "continuous",
+   "xyz": [
+    -0.43,
+    0.0,
+    0.5
+   ],
+   "rpy": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "axis": [
+    0.0,
+    0.0,
+    1.0
+   ],
+   "lower": 0.0,
+   "upper": 0.0
+  },
+  "picker_x_link": {
+   "name": "picker_x_joint",
+   "parent": "base_link",
+   "type": "prismatic",
+   "xyz": [
+    0.0,
+    0.62,
+    2.1
+   ],
+   "rpy": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "axis": [
+    1.0,
+    0.0,
+    0.0
+   ],
+   "lower": -1.3,
+   "upper": 0.8
+  },
+  "picker_z_link": {
+   "name": "picker_z_joint",
+   "parent": "picker_x_link",
+   "type": "prismatic",
+   "xyz": [
+    0.0,
+    0.0,
+    -0.06
+   ],
+   "rpy": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "axis": [
+    0.0,
+    0.0,
+    -1.0
+   ],
+   "lower": 0.0,
+   "upper": 1.5
+  },
+  "picker_y_link": {
+   "name": "picker_y_joint",
+   "parent": "picker_z_link",
+   "type": "prismatic",
+   "xyz": [
+    0.0,
+    0.1,
+    -0.06
+   ],
+   "rpy": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "axis": [
+    0.0,
+    -1.0,
+    0.0
+   ],
+   "lower": 0.0,
+   "upper": 0.16
+  },
+  "finger_a_link": {
+   "name": "finger_a_joint",
+   "parent": "picker_y_link",
+   "type": "prismatic",
+   "xyz": [
+    0.03,
+    -0.125,
+    0.0
+   ],
+   "rpy": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "axis": [
+    -1.0,
+    0.0,
+    0.0
+   ],
+   "lower": 0.0,
+   "upper": 0.014
+  },
+  "finger_b_link": {
+   "name": "finger_b_joint",
+   "parent": "picker_y_link",
+   "type": "prismatic",
+   "xyz": [
+    -0.03,
+    -0.125,
+    0.0
+   ],
+   "rpy": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "axis": [
+    1.0,
+    0.0,
+    0.0
+   ],
+   "lower": 0.0,
+   "upper": 0.014
+  },
+  "shuttle_link": {
+   "name": "shuttle_joint",
+   "parent": "base_link",
+   "type": "prismatic",
+   "xyz": [
+    -1.65,
+    0.0,
+    0.92
+   ],
+   "rpy": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "axis": [
+    1.0,
+    0.0,
+    0.0
+   ],
+   "lower": -0.3,
+   "upper": 0.02
+  },
+  "auger_feed_link": {
+   "name": "auger_feed_joint",
+   "parent": "shuttle_link",
+   "type": "prismatic",
+   "xyz": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "rpy": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "axis": [
+    0.0,
+    0.0,
+    -1.0
+   ],
+   "lower": 0.0,
+   "upper": 1.1
+  },
+  "auger_link": {
+   "name": "auger_spin_joint",
+   "parent": "auger_feed_link",
+   "type": "continuous",
+   "xyz": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "rpy": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "axis": [
+    0.0,
+    0.0,
+    1.0
+   ],
+   "lower": 0.0,
+   "upper": 0.0
+  },
+  "duckbill_feed_link": {
+   "name": "duckbill_feed_joint",
+   "parent": "shuttle_link",
+   "type": "prismatic",
+   "xyz": [
+    0.28,
+    0.0,
+    -0.04
+   ],
+   "rpy": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "axis": [
+    0.0,
+    0.0,
+    -1.0
+   ],
+   "lower": 0.0,
+   "upper": 1.2
+  },
+  "jaw_l_link": {
+   "name": "jaw_l_joint",
+   "parent": "duckbill_feed_link",
+   "type": "revolute",
+   "xyz": [
+    0.0,
+    0.046,
+    -0.1
+   ],
+   "rpy": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "axis": [
+    1.0,
+    0.0,
+    0.0
+   ],
+   "lower": 0.0,
+   "upper": 0.6
+  },
+  "jaw_r_link": {
+   "name": "jaw_r_joint",
+   "parent": "duckbill_feed_link",
+   "type": "revolute",
+   "xyz": [
+    0.0,
+    -0.046,
+    -0.1
+   ],
+   "rpy": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "axis": [
+    -1.0,
+    0.0,
+    0.0
+   ],
+   "lower": 0.0,
+   "upper": 0.6
+  },
+  "tamp_link": {
+   "name": "tamp_joint",
+   "parent": "shuttle_link",
+   "type": "prismatic",
+   "xyz": [
+    0.28,
+    0.0,
+    -0.18
+   ],
+   "rpy": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "axis": [
+    0.0,
+    0.0,
+    -1.0
+   ],
+   "lower": 0.0,
+   "upper": 1.2
+  },
+  "gnss_link": {
+   "name": "gnss_joint",
+   "parent": "base_link",
+   "type": "fixed",
+   "xyz": [
+    1.15,
+    0.0,
+    2.95
+   ],
+   "rpy": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "axis": [
+    1.0,
+    0.0,
+    0.0
+   ],
+   "lower": null,
+   "upper": null
+  },
+  "imu_link": {
+   "name": "imu_joint",
+   "parent": "base_link",
+   "type": "fixed",
+   "xyz": [
+    0.0,
+    0.0,
+    0.3
+   ],
+   "rpy": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "axis": [
+    1.0,
+    0.0,
+    0.0
+   ],
+   "lower": null,
+   "upper": null
+  }
+ },
+ "pose": {
+  "picker_x_joint": -1.2,
+  "picker_z_joint": 0.74
+ }
+}

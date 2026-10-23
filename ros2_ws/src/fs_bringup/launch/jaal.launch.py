@@ -27,7 +27,7 @@ from fs_bringup import sim
 
 ARGS = {"robots": "3", "field": "demo", "pattern": "square", "spacing": "3.0", "plugs": "", "stock_plugs": "",
         "bays": "1", "rtk_policy": "continue", "dropouts": "0", "cows": "2", "lidar": "true", "cruise": "1.0",
-        "headless": "false", "rtf": "1.0", "rviz": "true", "seed": "11", "soil": "sandy_loam", "log_dir": ""}
+        "headless": "false", "rtf": "1.0", "rviz": "true", "seed": "11", "soil": "sandy_loam", "log_dir": "", "inspect": "false"}
 
 
 def setup(context):
@@ -48,10 +48,9 @@ def setup(context):
     actions = sim.gazebo(site_dir / "open_field.sdf", sim.on(c["headless"]), float(c["rtf"]))
     entries = []
     for i, ns in enumerate(robots):
-        actions += sim.spawn_robot("jaal", ns, site_dir, site, lidar)
+        actions += sim.spawn_robot("jaal", ns, site_dir, site, lidar, inspect=sim.on(c["inspect"]))
         entries += sim.bridge_entries("jaal", ns, lidar)
-        head = {"plugs": plugs, "water_l": 250.0, "water_dose_l": 0.5, "pump_lps": 0.4, "hole_depth": 0.25,
-                "place_s": 1.0, "close_s": 1.2}
+        head = {"plugs": plugs, "water_l": 250.0, "water_dose_l": 0.5, "pump_lps": 0.4, "hole_depth": 0.25}
         actions += sim.robot_core("jaal", ns, site_file, world, head, dropouts=float(c["dropouts"]), seed=seed + i)
         actions.append(Node(package="fs_autonomy", executable="jaal_navigator", namespace=ns, output="screen",
                             parameters=[{"site_file": str(site_file), "robot": ns, "robots": robots,

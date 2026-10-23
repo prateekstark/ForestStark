@@ -23,7 +23,7 @@ target_include_directories(fs_soil PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include> $<INSTALL_INTERFACE:include>)
 
 set(fs_systems terramechanics:Terramechanics auger_soil:AugerSoil swerve_drive:SwerveDrive
-  joint_state_rate:JointStateRate)
+  joint_state_rate:JointStateRate plug_inventory:PlugInventory)
 foreach(entry ${fs_systems})
   string(REPLACE ":" ";" parts ${entry})
   list(GET parts 0 sys)

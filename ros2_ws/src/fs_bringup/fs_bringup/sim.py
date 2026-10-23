@@ -22,9 +22,12 @@ from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch_ros.actions import Node
 
 GZ_TAG = "FS_GZ_LAUNCH"
-JOINT_CMDS = {"katar": ["sled_joint", "carriage_joint"],
-              "jaal": [],
-              "pahadi": ["artic_yaw_joint", "arm_yaw_joint", "arm_shoulder_joint", "arm_elbow_joint", "arm_wrist_joint"]}
+DUCKBILL = ["duckbill_feed_joint", "jaw_l_joint", "jaw_r_joint", "tamp_joint"]
+JOINT_CMDS = {"katar": ["sled_joint", "carriage_joint", "turret_joint", "carousel_joint"] + DUCKBILL,
+              "jaal": ["drum_f_joint", "drum_r_joint", "picker_x_joint", "picker_z_joint", "picker_y_joint",
+                       "finger_a_joint", "finger_b_joint", "shuttle_joint"] + DUCKBILL,
+              "pahadi": ["artic_yaw_joint", "arm_yaw_joint", "arm_shoulder_joint", "arm_elbow_joint", "arm_wrist_joint",
+                         "finger_l_joint", "finger_r_joint"]}
 BASE_HEIGHT = {"katar": 0.72, "jaal": 0.38, "pahadi": 0.21}
 GNSS_LEVER = {"katar": [0.1, 0.0, 2.0], "jaal": [1.15, 0.0, 2.95], "pahadi": [-0.45, -0.26, 1.27]}  # base_link -> antenna
 
@@ -77,17 +80,21 @@ def _stop_gazebo(context, *args, **kwargs):
     return []
 
 
-def robot_description(kind: str, ns: str, soil_map: Path, lidar: bool, gnss_sigma: float = 0.02) -> str:
+def robot_description(kind: str, ns: str, soil_map: Path, lidar: bool, gnss_sigma: float = 0.02,
+                      inspect: bool = False) -> str:
+    """URDF from xacro. inspect adds a fixed camera beside the plant handling that saves frames to
+    /tmp/fs_inspect (topic /model/<ns>/inspect_cam)."""
     path = Path(get_package_share_directory("fs_description")) / "urdf" / f"{kind}.urdf.xacro"
     doc = xacro.process_file(str(path), mappings={"ns": ns, "soil_map": str(soil_map),
                                                   "lidar": "true" if lidar else "false",
-                                                  "gnss_sigma": str(gnss_sigma)})
+                                                  "gnss_sigma": str(gnss_sigma),
+                                                  "inspect_cam": "true" if inspect else "false"})
     return doc.toxml()
 
 
-def spawn_robot(kind: str, ns: str, site_dir: Path, site: dict, lidar: bool):
+def spawn_robot(kind: str, ns: str, site_dir: Path, site: dict, lidar: bool, inspect: bool = False):
     pose = next(s for s in site["spawn"] if s["name"] == ns)
-    desc = robot_description(kind, ns, site_dir / site["soil_map"], lidar)
+    desc = robot_description(kind, ns, site_dir / site["soil_map"], lidar, inspect=inspect)
     return [
         Node(package="robot_state_publisher", executable="robot_state_publisher", namespace=ns, output="log",
              parameters=[{"robot_description": desc, "frame_prefix": f"{ns}/", "use_sim_time": True}]),
@@ -104,13 +111,15 @@ def bridge_entries(kind: str, ns: str, lidar: bool) -> list:
            ("joint_states", "joint_states", "sensor_msgs/msg/JointState", "gz.msgs.Model"),
            ("ground_truth", "ground_truth", "nav_msgs/msg/Odometry", "gz.msgs.Odometry"),
            ("auger/status", "auger/status", "std_msgs/msg/String", "gz.msgs.StringMsg"),
+           ("plugs/status", "plugs/status", "std_msgs/msg/String", "gz.msgs.StringMsg"),
            ("terramechanics", "terramechanics", "std_msgs/msg/String", "gz.msgs.StringMsg")]
     if kind == "pahadi":
         g2r.append(("imu_rear", "imu_rear", "sensor_msgs/msg/Imu", "gz.msgs.IMU"))
     if lidar:
         g2r.append(("scan", "scan", "sensor_msgs/msg/LaserScan", "gz.msgs.LaserScan"))
     r2g = [("cmd_vel", "cmd_vel", "geometry_msgs/msg/Twist", "gz.msgs.Twist"),
-           ("auger/cmd", "auger/cmd", "std_msgs/msg/String", "gz.msgs.StringMsg")]
+           ("auger/cmd", "auger/cmd", "std_msgs/msg/String", "gz.msgs.StringMsg"),
+           ("plugs/cmd", "plugs/cmd", "std_msgs/msg/String", "gz.msgs.StringMsg")]
     r2g += [(f"joint/{j}/cmd_pos", f"joint/{j}/cmd_pos", "std_msgs/msg/Float64", "gz.msgs.Double")
             for j in JOINT_CMDS[kind]]
     out = [{"ros_topic_name": f"/{ns}/{r}", "gz_topic_name": f"/model/{ns}/{g}", "ros_type_name": rt,

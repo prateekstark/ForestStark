@@ -1,0 +1,581 @@
+{
+ "joints": {
+  "fl1_link": {
+   "name": "fl1_joint",
+   "parent": "base_link",
+   "type": "continuous",
+   "xyz": [
+    0.4,
+    0.5,
+    0.0
+   ],
+   "rpy": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "axis": [
+    0.0,
+    1.0,
+    0.0
+   ],
+   "lower": 0.0,
+   "upper": 0.0
+  },
+  "fl2_link": {
+   "name": "fl2_joint",
+   "parent": "base_link",
+   "type": "continuous",
+   "xyz": [
+    0.0,
+    0.5,
+    0.0
+   ],
+   "rpy": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "axis": [
+    0.0,
+    1.0,
+    0.0
+   ],
+   "lower": 0.0,
+   "upper": 0.0
+  },
+  "fl3_link": {
+   "name": "fl3_joint",
+   "parent": "base_link",
+   "type": "continuous",
+   "xyz": [
+    -0.4,
+    0.5,
+    0.0
+   ],
+   "rpy": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "axis": [
+    0.0,
+    1.0,
+    0.0
+   ],
+   "lower": 0.0,
+   "upper": 0.0
+  },
+  "fr1_link": {
+   "name": "fr1_joint",
+   "parent": "base_link",
+   "type": "continuous",
+   "xyz": [
+    0.4,
+    -0.5,
+    0.0
+   ],
+   "rpy": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "axis": [
+    0.0,
+    1.0,
+    0.0
+   ],
+   "lower": 0.0,
+   "upper": 0.0
+  },
+  "fr2_link": {
+   "name": "fr2_joint",
+   "parent": "base_link",
+   "type": "continuous",
+   "xyz": [
+    0.0,
+    -0.5,
+    0.0
+   ],
+   "rpy": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "axis": [
+    0.0,
+    1.0,
+    0.0
+   ],
+   "lower": 0.0,
+   "upper": 0.0
+  },
+  "fr3_link": {
+   "name": "fr3_joint",
+   "parent": "base_link",
+   "type": "continuous",
+   "xyz": [
+    -0.4,
+    -0.5,
+    0.0
+   ],
+   "rpy": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "axis": [
+    0.0,
+    1.0,
+    0.0
+   ],
+   "lower": 0.0,
+   "upper": 0.0
+  },
+  "artic_link": {
+   "name": "artic_yaw_joint",
+   "parent": "base_link",
+   "type": "revolute",
+   "xyz": [
+    -0.85,
+    0.0,
+    0.25
+   ],
+   "rpy": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "axis": [
+    0.0,
+    0.0,
+    1.0
+   ],
+   "lower": -0.52,
+   "upper": 0.52
+  },
+  "rear_link": {
+   "name": "artic_roll_joint",
+   "parent": "artic_link",
+   "type": "revolute",
+   "xyz": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "rpy": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "axis": [
+    1.0,
+    0.0,
+    0.0
+   ],
+   "lower": -0.26,
+   "upper": 0.26
+  },
+  "rl1_link": {
+   "name": "rl1_joint",
+   "parent": "rear_link",
+   "type": "continuous",
+   "xyz": [
+    -0.45,
+    0.5,
+    -0.25
+   ],
+   "rpy": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "axis": [
+    0.0,
+    1.0,
+    0.0
+   ],
+   "lower": 0.0,
+   "upper": 0.0
+  },
+  "rl2_link": {
+   "name": "rl2_joint",
+   "parent": "rear_link",
+   "type": "continuous",
+   "xyz": [
+    -0.85,
+    0.5,
+    -0.25
+   ],
+   "rpy": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "axis": [
+    0.0,
+    1.0,
+    0.0
+   ],
+   "lower": 0.0,
+   "upper": 0.0
+  },
+  "rl3_link": {
+   "name": "rl3_joint",
+   "parent": "rear_link",
+   "type": "continuous",
+   "xyz": [
+    -1.25,
+    0.5,
+    -0.25
+   ],
+   "rpy": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "axis": [
+    0.0,
+    1.0,
+    0.0
+   ],
+   "lower": 0.0,
+   "upper": 0.0
+  },
+  "rr1_link": {
+   "name": "rr1_joint",
+   "parent": "rear_link",
+   "type": "continuous",
+   "xyz": [
+    -0.45,
+    -0.5,
+    -0.25
+   ],
+   "rpy": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "axis": [
+    0.0,
+    1.0,
+    0.0
+   ],
+   "lower": 0.0,
+   "upper": 0.0
+  },
+  "rr2_link": {
+   "name": "rr2_joint",
+   "parent": "rear_link",
+   "type": "continuous",
+   "xyz": [
+    -0.85,
+    -0.5,
+    -0.25
+   ],
+   "rpy": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "axis": [
+    0.0,
+    1.0,
+    0.0
+   ],
+   "lower": 0.0,
+   "upper": 0.0
+  },
+  "rr3_link": {
+   "name": "rr3_joint",
+   "parent": "rear_link",
+   "type": "continuous",
+   "xyz": [
+    -1.25,
+    -0.5,
+    -0.25
+   ],
+   "rpy": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "axis": [
+    0.0,
+    1.0,
+    0.0
+   ],
+   "lower": 0.0,
+   "upper": 0.0
+  },
+  "arm_base_link": {
+   "name": "arm_base_joint",
+   "parent": "base_link",
+   "type": "fixed",
+   "xyz": [
+    0.25,
+    0.0,
+    0.65
+   ],
+   "rpy": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "axis": [
+    1.0,
+    0.0,
+    0.0
+   ],
+   "lower": null,
+   "upper": null
+  },
+  "arm_yaw_link": {
+   "name": "arm_yaw_joint",
+   "parent": "arm_base_link",
+   "type": "revolute",
+   "xyz": [
+    0.0,
+    0.0,
+    0.08
+   ],
+   "rpy": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "axis": [
+    0.0,
+    0.0,
+    1.0
+   ],
+   "lower": -3.3,
+   "upper": 3.3
+  },
+  "arm_upper_link": {
+   "name": "arm_shoulder_joint",
+   "parent": "arm_yaw_link",
+   "type": "revolute",
+   "xyz": [
+    0.0,
+    0.0,
+    0.12
+   ],
+   "rpy": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "axis": [
+    0.0,
+    1.0,
+    0.0
+   ],
+   "lower": -1.6,
+   "upper": 1.6
+  },
+  "arm_fore_link": {
+   "name": "arm_elbow_joint",
+   "parent": "arm_upper_link",
+   "type": "revolute",
+   "xyz": [
+    0.85,
+    0.0,
+    0.0
+   ],
+   "rpy": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "axis": [
+    0.0,
+    1.0,
+    0.0
+   ],
+   "lower": -2.9,
+   "upper": 2.9
+  },
+  "arm_wrist_link": {
+   "name": "arm_wrist_joint",
+   "parent": "arm_fore_link",
+   "type": "revolute",
+   "xyz": [
+    0.85,
+    0.0,
+    0.0
+   ],
+   "rpy": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "axis": [
+    0.0,
+    1.0,
+    0.0
+   ],
+   "lower": -2.9,
+   "upper": 2.9
+  },
+  "auger_feed_link": {
+   "name": "auger_feed_joint",
+   "parent": "arm_wrist_link",
+   "type": "prismatic",
+   "xyz": [
+    0.14,
+    0.0,
+    0.0
+   ],
+   "rpy": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "axis": [
+    1.0,
+    0.0,
+    0.0
+   ],
+   "lower": 0.0,
+   "upper": 0.45
+  },
+  "auger_link": {
+   "name": "auger_spin_joint",
+   "parent": "auger_feed_link",
+   "type": "continuous",
+   "xyz": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "rpy": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "axis": [
+    1.0,
+    0.0,
+    0.0
+   ],
+   "lower": 0.0,
+   "upper": 0.0
+  },
+  "finger_l_link": {
+   "name": "finger_l_joint",
+   "parent": "arm_wrist_link",
+   "type": "prismatic",
+   "xyz": [
+    0.07,
+    0.04,
+    -0.135
+   ],
+   "rpy": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "axis": [
+    0.0,
+    -1.0,
+    0.0
+   ],
+   "lower": 0.0,
+   "upper": 0.02
+  },
+  "finger_r_link": {
+   "name": "finger_r_joint",
+   "parent": "arm_wrist_link",
+   "type": "prismatic",
+   "xyz": [
+    0.07,
+    -0.04,
+    -0.135
+   ],
+   "rpy": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "axis": [
+    0.0,
+    1.0,
+    0.0
+   ],
+   "lower": 0.0,
+   "upper": 0.02
+  },
+  "gnss_link": {
+   "name": "gnss_joint",
+   "parent": "base_link",
+   "type": "fixed",
+   "xyz": [
+    -0.45,
+    -0.26,
+    1.27
+   ],
+   "rpy": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "axis": [
+    1.0,
+    0.0,
+    0.0
+   ],
+   "lower": null,
+   "upper": null
+  },
+  "imu_link": {
+   "name": "imu_joint",
+   "parent": "base_link",
+   "type": "fixed",
+   "xyz": [
+    0.0,
+    0.0,
+    0.3
+   ],
+   "rpy": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "axis": [
+    1.0,
+    0.0,
+    0.0
+   ],
+   "lower": null,
+   "upper": null
+  },
+  "imu_rear_link": {
+   "name": "imu_rear_joint",
+   "parent": "rear_link",
+   "type": "fixed",
+   "xyz": [
+    -0.85,
+    0.0,
+    0.1
+   ],
+   "rpy": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "axis": [
+    1.0,
+    0.0,
+    0.0
+   ],
+   "lower": null,
+   "upper": null
+  }
+ },
+ "pose": {
+  "arm_shoulder_joint": -1.35,
+  "arm_elbow_joint": 2.6,
+  "arm_wrist_joint": 0.3
+ }
+}

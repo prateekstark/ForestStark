@@ -23,7 +23,7 @@ from fs_bringup import sim
 
 ARGS = {"slope": "14", "soil": "lateritic_gravel", "rock_cover": "0.25", "side": "downhill", "rows": "3",
         "row_spacing": "4.0", "spacing": "2.5", "half_moon": "true", "speed": "0.35", "max_spots": "0",
-        "headless": "false", "rtf": "1.0", "rviz": "true", "seed": "23", "lidar": "false", "log_dir": ""}
+        "headless": "false", "rtf": "1.0", "rviz": "true", "seed": "23", "lidar": "false", "log_dir": "", "inspect": "false"}
 
 CONTACTS = [f"{m}{s}{i}_link" for m in "fr" for s in "lr" for i in (1, 2, 3)]
 
@@ -38,10 +38,10 @@ def setup(context):
     ns = "pahadi"
     common = {"site_file": str(site_file), "robot": ns, "use_sim_time": True}
     head = {"plugs": 200, "water_l": 150.0, "seedballs": 3000, "water_dose_l": 1.0, "pump_lps": 0.3,
-            "hole_depth": 0.25, "place_s": 2.0, "close_s": 1.5}
+            "hole_depth": 0.25}
     lidar = sim.on(c["lidar"])
     actions = sim.gazebo(site_dir / "hill_slope.sdf", sim.on(c["headless"]), float(c["rtf"]))
-    actions += sim.spawn_robot("pahadi", ns, site_dir, site, lidar)
+    actions += sim.spawn_robot("pahadi", ns, site_dir, site, lidar, inspect=sim.on(c["inspect"]))
     actions.append(sim.bridge(site["name"], sim.bridge_entries("pahadi", ns, lidar), site_dir))
     actions += sim.robot_core("pahadi", ns, site_file, site["name"], head, seed=seed)
     actions += [

@@ -8,9 +8,10 @@ Three planting robots, each with a physics simulation and the software that woul
 | B | **Jaal** (जाल, "net") | Open blocks, 1–50 ha | Electric 4-wheel independent steer (swerve) | Fully autonomous fleet with a tender truck |
 | C | **Pahadi** (पहाड़ी, "of the hills") | Slopes to ~25°, rocky land | Two tracked modules, steered articulation | Local autonomy on contour lines, operator on a tablet |
 
-The workspace has two parts:
+The workspace has three parts:
 
-- **`ros2_ws/`**: ROS 2 Lyrical + Gazebo Jetty. Custom Gazebo systems for soil dynamics, robot models, and the autonomy stack: localization, planting head, planners, fleet logistics, stability and traction monitoring.
+- **`ros2_ws/`**: ROS 2 Lyrical + Gazebo Jetty. Custom Gazebo systems for soil dynamics and plant handling, robot models, and the autonomy stack: localization, planting head, planners, fleet logistics, stability and traction monitoring.
+- **`cad/`**: parametric CAD (CadQuery) of all three machines. It produces STEP assemblies, a bill of materials, the meshes Gazebo and RViz draw, and a browser CAD viewer. Link frames come from the robots' xacro files, so the CAD and the simulation share one kinematic definition.
 - **`sim/`**: a browser simulation lab (three.js + canvas) with the same physics constants and control logic, live engineering diagrams and the equations. It is the quick, shareable twin of the Gazebo stack.
 
 ---
@@ -62,6 +63,46 @@ python3 -m http.server 8765 --directory sim
 
 Then open `http://localhost:8765/preview.html` in a browser.
 
+To watch the plant handling up close, add `inspect:=true`. It mounts a fixed camera beside each robot's mechanism, publishing on `/model/<ns>/inspect_cam`. Show it in the Gazebo GUI with the Image Display plugin, or in RViz through a bridge.
+
+## 2a. Plant handling
+
+Every plug is tracked by the `fs::PlugInventory` Gazebo system. Each carrier cell (a drum pocket, carousel cup or tray cell) and each holder (gripper, duckbill) shows a plug while it holds one. The planting head drives the real joints, then tells the inventory what happened (`plugs/cmd`: `pick`, `move`, `drop`, `fill`, `empty`). It reads back counts and the world position of the next full cell (`plugs/status`). A feeder thread keeps the next plug staged while the robot drives and bores.
+
+| | Store | Hand-off | Into the ground |
+|---|---|---|---|
+| Katar | Rack trays on the trailer; a loader tops up a 12-cup **carousel** over the chute (one cup every 4 s) | The carousel indexes the next cup over the chute and the plug drops into the **duckbill** | The **turret** carries the auger at +x and the duckbill at −x. After boring it swings 180°, the duckbill pushes in, the jaws open, it withdraws past the seedling's crown, and a tamp ring firms the soil |
+| Jaal | Two **drums**, 4 tiers × 45 pockets (360 plugs) | A Cartesian **picker** under the roof (x rail, z column, y reach, two fingers) grips the root ball and carries it to a **funnel** feeding the duckbill | The rear **shuttle** swaps the duckbill over the hole the auger just made; then the same duckbill and tamp sequence as Katar |
+| Pahadi | One 50-cell **active tray** in the arm's reach; three spares in the rear **magazine** | After boring, the arm turns the wrist level (gripper IK, `ik.solve_gripper`), picks the next cell's plug and carries it to the hole | The gripper lowers the plug, releases it and presses the soil, then the arm scrapes the half-moon bund. An empty tray triggers a tray swap |
+
+The launch's `plugs` value sets the starting load: carriers are filled to it and the rest is held in reserve (racks or magazine). `head/status.plugs_left` counts everything on board, and a tender refill (`head/refill`) refills the drums.
+
+## 2b. CAD
+
+```bash
+python3 -m venv cad/.venv && cad/.venv/bin/pip install cadquery     # once
+cad/.venv/bin/python cad/build.py              # all three robots (Jaal takes ~2.5 min)
+cad/.venv/bin/python cad/build.py pahadi       # one robot
+```
+
+| Output | What it is |
+|---|---|
+| `cad/out/<robot>.step` | Full assembly, every link placed by its URDF joint (display pose) |
+| `cad/out/katar_planting_head.step`, `jaal_plant_handling.step`, `pahadi_arm_and_gripper.step` | The plant-handling subsystem on its own |
+| `cad/out/<robot>_bom.csv` | Parts, materials, volumes and estimated masses (volume × density × solid fraction) |
+| `cad/out/<robot>.glb`, `<robot>_joints.json` | Assembly and joint tree for the viewer |
+| `ros2_ws/src/fs_description/meshes/<robot>/<link>.obj` | Per-link visuals used by Gazebo and RViz (metres); trays use light proxies in the meshes and full cells in the STEP |
+
+Estimated structural masses: Katar 4,155 kg (tractor and trailer), Jaal 1,498 kg, Pahadi 1,405 kg.
+
+The viewer (`cad/viewer.html`) shows the part tree with BOM masses. It can isolate parts, explode the assembly, cut a section plane, pose every mechanism joint and animate one full plant cycle per robot, with the plug moving from the store into the ground. Serve `cad/` and open it:
+
+```bash
+python3 -m http.server 8766 --directory cad
+```
+
+Then open `http://localhost:8766/viewer.html`.
+
 ## 3. Architecture
 
 ```mermaid
@@ -97,8 +138,8 @@ flowchart LR
 | Package | What is in it |
 |---|---|
 | `fs_interfaces` | `PlantRecord`, `HeadStatus`, `StabilityStatus`, `TractionStatus`, `Mission`, `Spot`, `RobotState`; action `PlantSpot`, action `TenderService`, service `ReserveBay` |
-| `fs_gazebo` | C++ systems: `fs::Terramechanics`, `fs::AugerSoil`, `fs::SwerveDrive`, `fs::JointStateRate`; soil-map loader; site generator (`fs_gazebo.sites`) for the roadside, open-field and hill-slope worlds; scenery models |
-| `fs_description` | xacro models: `katar`, `jaal`, `pahadi` (sensors, drives, soil systems, joint controllers) |
+| `fs_gazebo` | C++ systems: `fs::Terramechanics`, `fs::AugerSoil`, `fs::PlugInventory`, `fs::SwerveDrive`, `fs::JointStateRate`; soil-map loader; site generator (`fs_gazebo.sites`) for the roadside, open-field and hill-slope worlds; scenery models |
+| `fs_description` | xacro models: `katar`, `jaal`, `pahadi` (sensors, drives, soil systems, plant-handling joints and controllers); CAD meshes |
 | `fs_autonomy` | Python library (`geometry`, `site`, `terramechanics`, `stability`, `planners`, `control`, `ekf`, `ik`, `head_model`) and nodes |
 | `fs_bringup` | `katar.launch.py`, `jaal.launch.py`, `pahadi.launch.py`, RViz layouts, `fs_bringup.sim` launch helpers |
 
@@ -111,6 +152,7 @@ flowchart LR
 | `localization/odom` + TF `map → ns/odom → ns/base_link` | `Odometry` | localization → all |
 | `cmd_vel`, `joint/<j>/cmd_pos`, `auger/cmd` | commands | autonomy → Gazebo |
 | `auger/status`, `terramechanics` | JSON `String` | Gazebo soil systems → head, traction monitor |
+| `plugs/status` / `plugs/cmd` | JSON `String` / `String` | fs::PlugInventory ↔ planting_head |
 | `plant_spot` | `PlantSpot` action | navigator → planting_head |
 | `head/status`, `stability`, `traction`, `state`, `mission` | fs_interfaces | robot → navigator, fleet, RViz |
 | `/plants/records` | `PlantRecord` | planting_head → mission_logger, viz |
@@ -144,9 +186,12 @@ Measured in the Gazebo runs (default arguments):
 | | Katar | Jaal ×3 | Pahadi |
 |---|---|---|---|
 | Placement error, mean | 3.5 cm | 3.6 cm | 2.4 cm |
-| Time at each spot | 12.5 s | 13.3 s | ~111 s |
+| Time at each spot, timed head | 12.5 s | 13.3 s | ~111 s |
+| Time at each spot, mechanisms modelled | 18 s | 17 s | 120–150 s |
 | Boring energy per hole | 35 kJ (Ø15 × 30 cm) | 18.5 kJ (Ø12 × 25 cm) | ~100 kJ (dry laterite) |
-| Throughput | ~205 /h | ~575 /h for the fleet | ~32 /h |
+| Throughput, timed head | ~205 /h | ~575 /h for the fleet | ~32 /h |
+
+The first runs timed the place and close steps. The mechanism runs (short runs of 2–6 spots, one Jaal) move every joint, and placement error stayed at 1–5 cm. Throughput with the mechanisms has not been re-measured over a full mission.
 
 Design points that came out of building and running it:
 
@@ -157,12 +202,15 @@ Design points that came out of building and running it:
 5. **Katar's stop-and-go spacing depends on the boom sled, not on the driver.** With a 0.8 s reaction time and 0.9 m/s² braking, the sled absorbs the stopping error. On-the-move planting only beats stop-and-go with a long sled (≥ 2 m).
 6. **Katar's full 1,000 L tank sits ahead of the axle,** giving ~35 % tongue load at the start. Moving it rearward would bring it toward 10–15 %.
 7. **Gazebo's NavSat noise is in degrees, not metres.** A 0.02 "m" sigma produced kilometre-scale jumps until it was converted (`common.xacro`).
-8. **Two more Gazebo pitfalls.** DART ignores `<heightmap><pos>` (the terrain model itself is raised instead), and `/world/<w>/create` applies the request's `pose` over the pose in the SDF. Before the planting head set the request pose, every sapling was stacked at the world origin, where Jaal's lidar saw them as an obstacle.
+8. **The plug's path, not the auger, sets the floor on Katar's and Jaal's cycle once the mechanisms are modelled.** The duckbill stroke and the tamp take about 5 s after the auger is out. Lowering the loaded duckbill to just above the ground while the auger bores, and closing the jaws only once they clear the seedling's crown, took Katar from 24 s to 18 s per spot.
+9. **Ogre2's heightmap shader fails under headless EGL** as soon as a camera renders the hill world. Pahadi's terrain is drawn as a generated mesh (`hill_slope_terrain.obj`), and the heightmap remains the collision shape.
+10. **Two more Gazebo pitfalls.** DART ignores `<heightmap><pos>` (the terrain model itself is raised instead), and `/world/<w>/create` applies the request's `pose` over the pose in the SDF. Before the planting head set the request pose, every sapling was stacked at the world origin, where Jaal's lidar saw them as an obstacle.
 
 ## 6. Limitations
 
 - Terramechanics is applied per contact with a quasi-static load split. There is no bulldozing, multi-pass compaction or rut geometry, and tracks are modelled as three road-wheel segments per side.
 - Stones are visual only in Gazebo; the soil map tells the auger where rock is.
+- Plugs are visuals that the inventory moves between links. They are not dynamic bodies, so a dropped or crushed plug cannot be simulated. A plug is planted by spawning a sapling model at the hole.
 - Gazebo's mass does not change as plugs and water are used. The stability monitor, and Katar's trailer-load diagram in the browser lab, account for it in software.
 - Jaal's front lidar is a single planar scan 0.30 m above ground: it sees stumps, mounds, cattle and other robots, not stones. It needs GPU rendering (`--headless-rendering` works on this machine). With `lidar:=false` the safety field only knows other robots' positions. If the wheels spin without progress (traction monitor: immobilised), the navigator backs off and goes round.
 - Simulation speed: three Jaal robots run at about 0.6× real time on this laptop.

@@ -11,6 +11,7 @@ setup(
     data_files=[("share/ament_index/resource_index/packages", ["resource/fs_autonomy"]),
                 ("share/fs_autonomy", ["package.xml"])],
     install_requires=["setuptools"],
+    extras_require={"test": ["pytest"]},
     zip_safe=True,
     maintainer="ForestStark",
     maintainer_email="garg.prateek@alumni.iitd.ac.in",

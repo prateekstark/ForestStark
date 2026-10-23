@@ -87,6 +87,26 @@ class Grid:
                 np.savetxt(f, self.layers[lname], fmt=fmt)
 
 
+def write_terrain_obj(path: Path, X: np.ndarray, Y: np.ndarray, Z: np.ndarray, rgb=(0.66, 0.55, 0.40)):
+    """Grid surface as an OBJ with smooth normals: the terrain visual. Ogre2's heightmap shader
+    does not compile under headless EGL, and a mesh also matches the soil map vertex for vertex."""
+    ny, nx = Z.shape
+    gy, gx = np.gradient(Z, Y[:, 0], X[0, :])
+    N = np.dstack([-gx, -gy, np.ones_like(Z)])
+    N /= np.linalg.norm(N, axis=2, keepdims=True)
+    mtl = path.with_suffix(".mtl")
+    lines = [f"mtllib {mtl.name}", "o terrain", "usemtl soil"]
+    lines += [f"v {x:.3f} {y:.3f} {z:.3f}" for x, y, z in zip(X.ravel(), Y.ravel(), Z.ravel())]
+    lines += [f"vn {a:.4f} {b:.4f} {c:.4f}" for a, b, c in N.reshape(-1, 3)]
+    idx = np.arange(nx * ny).reshape(ny, nx) + 1
+    a, b, c, d = idx[:-1, :-1].ravel(), idx[:-1, 1:].ravel(), idx[1:, 1:].ravel(), idx[1:, :-1].ravel()
+    lines += [f"f {i}//{i} {j}//{j} {k}//{k}" for i, j, k in zip(a, b, c)]
+    lines += [f"f {i}//{i} {j}//{j} {k}//{k}" for i, j, k in zip(a, c, d)]
+    path.write_text("\n".join(lines) + "\n")
+    r, g, bl = rgb
+    mtl.write_text(f"newmtl soil\nKa {r * .5:.3f} {g * .5:.3f} {bl * .5:.3f}\nKd {r} {g} {bl}\nKs 0.02 0.02 0.02\nNs 5\n")
+
+
 def write_png16(path: Path, img: np.ndarray):
     """Minimal 16-bit grayscale PNG writer (no Pillow needed). Row 0 is the top of the image."""
     h, w = img.shape
@@ -429,6 +449,8 @@ def build_hill_slope(out: Path, seed=23, slope_deg=14.0, soil="lateritic_gravel"
         return float(hill_height(np.array(x), np.array(y), slope_deg, seed))
 
     png = (out / f"{name}_height.png").resolve()
+    mesh = (out / f"{name}_terrain.obj").resolve()
+    write_terrain_obj(mesh, X, Y, H - hmin)
     parts = [world_header(name, ORIGINS[name])]
     # DART ignores <heightmap><pos>; lift the whole model by hmin instead (honoured by physics and rendering).
     parts.append(f"""    <model name="terrain">
@@ -438,9 +460,7 @@ def build_hill_slope(out: Path, seed=23, slope_deg=14.0, soil="lateritic_gravel"
         <collision name="c"><geometry><heightmap><uri>file://{png}</uri><size>{size} {size} {hmax - hmin:.4f}</size>
           <pos>0 0 0</pos></heightmap></geometry>
           <surface><friction><ode><mu>1.0</mu><mu2>1.0</mu2></ode></friction></surface></collision>
-        <visual name="v"><geometry><heightmap><uri>file://{png}</uri><size>{size} {size} {hmax - hmin:.4f}</size>
-          <pos>0 0 0</pos></heightmap></geometry>
-          <material><ambient>0.62 0.52 0.38 1</ambient><diffuse>0.66 0.55 0.40 1</diffuse></material></visual>
+        <visual name="v"><geometry><mesh><uri>file://{mesh}</uri></mesh></geometry></visual>
       </link>
     </model>
 """)

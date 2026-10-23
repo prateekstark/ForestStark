@@ -24,7 +24,7 @@ from fs_bringup import sim
 
 ARGS = {"mode": "stop_and_go", "spacing": "3.0", "speed_kmh": "2.5", "weave_m": "0.25", "reaction_s": "0.8",
         "surveyed": "true", "gnss": "rtk", "soil": "sandy_loam", "rail_min": "-1.8", "rail_max": "0.6",
-        "headless": "false", "rtf": "1.0", "rviz": "true", "seed": "7", "log_dir": ""}
+        "headless": "false", "rtf": "1.0", "rviz": "true", "seed": "7", "log_dir": "", "inspect": "false"}
 
 
 def setup(context):
@@ -36,9 +36,9 @@ def setup(context):
     ns = "katar"
     common = {"site_file": str(site_file), "robot": ns, "use_sim_time": True}
     head = {"plugs": 1200, "water_l": 1000.0, "water_dose_l": 1.0, "pump_lps": 0.5, "hole_depth": 0.30,
-            "place_s": 1.2, "close_s": 1.5, "rail_min": float(c["rail_min"]), "rail_max": float(c["rail_max"])}
+            "rail_min": float(c["rail_min"]), "rail_max": float(c["rail_max"])}
     actions = sim.gazebo(site_dir / "roadside.sdf", sim.on(c["headless"]), float(c["rtf"]))
-    actions += sim.spawn_robot("katar", ns, site_dir, site, lidar=False)
+    actions += sim.spawn_robot("katar", ns, site_dir, site, lidar=False, inspect=sim.on(c["inspect"]))
     actions.append(sim.bridge(site["name"], sim.bridge_entries("katar", ns, lidar=False), site_dir))
     actions += sim.robot_core("katar", ns, site_file, site["name"], head, gnss_mode=c["gnss"], seed=seed)
     actions += [

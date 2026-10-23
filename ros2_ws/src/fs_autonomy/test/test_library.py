@@ -189,3 +189,10 @@ def test_u_turn_absorbs_along_track_offset(ahead):
     p = planners.u_turn((0, 0), 0.0, (ahead, -4.0), 3.4)
     assert p[-1] == pytest.approx((ahead, -4.0))
     assert 1 / planners.max_curvature(p) >= 3.4 - 0.05
+
+
+@pytest.mark.parametrize("target", [(-0.30, 0.15, 0.715), (-0.40, -0.23, 0.715), (0.35, 1.25, -0.40), (0.6, -1.1, 0.1)])
+def test_gripper_ik_round_trip(target):
+    q = ik.solve_gripper(target)
+    assert ik.forward_gripper(q) == pytest.approx(target, abs=1e-6)
+    assert q[1] + q[2] + q[3] == pytest.approx(0.0, abs=1e-9)

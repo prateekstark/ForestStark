@@ -3,8 +3,12 @@
   A · Katar — 40 hp tractor towing a planting trailer (tandem axle) with a side boom.
   Frames: base_link at the tractor rear-axle centre, 0.72 m above ground (REP-103: x forward, y left).
   Hitch: revolute about z, 1.15 m behind the rear axle. Boom: sled slides along the trailer
-  (sled_joint, along-track correction and on-the-move compensation), carriage slides across it
-  (carriage_joint: reach 1.5-3.5 m from the trailer centreline), auger feeds down.
+  (sled_joint), carriage slides across it (carriage_joint, reach 1.5-3.5 m from the trailer axis).
+
+  Planting head: a turret under the carriage carries the auger (+x station) and the duckbill planting
+  jaw (-x station). The loader keeps a 12-cup carousel on the carriage filled; one plug drops down
+  the chute into the closed duckbill while the auger bores, then the turret swings the duckbill
+  over the hole. Visuals are the CAD meshes (cad/forest_cad/katar.py); collisions are primitives.
 
   xacro katar.urdf.xacro ns:=katar soil_map:=/abs/roadside.soilmap
 -->
@@ -12,33 +16,20 @@
   <xacro:arg name="ns" default="katar"/>
   <xacro:arg name="soil_map" default=""/>
   <xacro:arg name="gnss_sigma" default="0.02"/>
+  <xacro:arg name="inspect_cam" default="false"/>
   <xacro:property name="ns" value="$(arg ns)"/>
+  <xacro:property name="R" value="katar"/>
   <xacro:include filename="$(find fs_description)/urdf/common.xacro"/>
 
   <!-- ===================== tractor ===================== -->
   <link name="base_link">
     <xacro:box_inertial m="2200" x="3.2" y="1.6" z="1.4"><origin xyz="0.9 0 0.15"/></xacro:box_inertial>
     <xacro:cbox xyz="1.3 0 0.12" size="3.0 0.8 0.75"/>
-    <xacro:vbox xyz="1.05 0 -0.08" size="2.5 0.6 0.3" material="fs_graphite"/>
-    <xacro:vbox xyz="1.88 0 0.40" size="1.55 0.78 0.7" material="fs_yellow"/>
-    <xacro:vbox xyz="2.67 0 0.36" size="0.06 0.68 0.58" material="fs_graphite"/>
-    <xacro:vcyl xyz="2.25 0.26 1.13" r="0.05" l="0.8" material="fs_graphite"/>
-    <xacro:vbox xyz="0 0.8 0.78" size="1.15 0.5 0.06" material="fs_yellow"/>
-    <xacro:vbox xyz="0 -0.8 0.78" size="1.15 0.5 0.06" material="fs_yellow"/>
-    <xacro:vbox xyz="0 0 0.40" size="1.25 1.2 0.08" material="fs_graphite"/>
-    <xacro:vbox xyz="0.02 0 1.92" size="1.35 1.3 0.08" material="fs_yellow"/>
-    <xacro:vbox xyz="-0.55 0.57 1.17" size="0.06 0.06 1.46" material="fs_graphite"/>
-    <xacro:vbox xyz="-0.55 -0.57 1.17" size="0.06 0.06 1.46" material="fs_graphite"/>
-    <xacro:vbox xyz="0.6 0.57 1.17" size="0.06 0.06 1.46" material="fs_graphite"/>
-    <xacro:vbox xyz="0.6 -0.57 1.17" size="0.06 0.06 1.46" material="fs_graphite"/>
-    <xacro:vbox xyz="0.6 0 1.36" size="0.02 1.08 1.0" material="fs_glass"/>
-    <xacro:vcyl xyz="0.3 0.42 2.02" r="0.07" l="0.12" material="fs_orange"/>
-    <xacro:vbox xyz="-0.85 0 0.0" size="0.5 0.14 0.12" material="fs_steel"/>
+    <xacro:mesh_visual robot="${R}" link="base_link"/>
   </link>
-  <xacro:person parent="base_link" name="driver" xyz="-0.12 0 0.44"/>
-
-  <xacro:wheel name="rear_left_wheel" parent="base_link" xyz="0 0.8 0" r="0.72" w="0.4" m="120"/>
-  <xacro:wheel name="rear_right_wheel" parent="base_link" xyz="0 -0.8 0" r="0.72" w="0.4" m="120"/>
+  <xacro:person parent="base_link" name="driver" xyz="-0.12 0 0.44" robot="${R}"/>
+  <xacro:wheel name="rear_left_wheel" parent="base_link" xyz="0 0.8 0" r="0.72" w="0.4" m="120" robot="${R}"/>
+  <xacro:wheel name="rear_right_wheel" parent="base_link" xyz="0 -0.8 0" r="0.72" w="0.4" m="120" robot="${R}"/>
   <xacro:macro name="steered_front" params="side y">
     <joint name="front_${side}_steer_joint" type="revolute">
       <parent link="base_link"/><child link="front_${side}_steer_link"/>
@@ -47,12 +38,12 @@
     </joint>
     <link name="front_${side}_steer_link">
       <inertial><mass value="10"/><inertia ixx="0.1" iyy="0.1" izz="0.1" ixy="0" ixz="0" iyz="0"/></inertial>
+      <xacro:mesh_visual robot="${R}" link="front_${side}_steer_link"/>
     </link>
-    <xacro:wheel name="front_${side}_wheel" parent="front_${side}_steer_link" xyz="0 0 0" r="0.42" w="0.24" m="40"/>
+    <xacro:wheel name="front_${side}_wheel" parent="front_${side}_steer_link" xyz="0 0 0" r="0.42" w="0.24" m="40" robot="${R}"/>
   </xacro:macro>
   <xacro:steered_front side="left" y="0.68"/>
   <xacro:steered_front side="right" y="-0.68"/>
-
   <xacro:gnss ns="${ns}" parent="base_link" xyz="0.1 0 2.0" sigma="$(arg gnss_sigma)"/>
   <xacro:imu ns="${ns}" name="imu" parent="base_link" xyz="0.3 0 0.2"/>
 
@@ -67,33 +58,13 @@
     <xacro:box_inertial m="2400" x="4.0" y="2.0" z="1.5"><origin xyz="-2.4 0 0.75"/></xacro:box_inertial>
     <xacro:cbox xyz="-2.7 0 0.36" size="3.7 2.0 0.3"/>
     <xacro:cbox xyz="-1.6 0 1.0" size="1.2 1.1 1.1"/>
-    <xacro:vbox xyz="-0.45 0 0" size="1.0 0.1 0.1" material="fs_steel"/>
-    <xacro:vbox xyz="-2.7 0 0.36" size="3.7 2.0 0.14" material="fs_graphite"/>
-    <xacro:vbox xyz="-2.7 0.98 0.49" size="3.7 0.04 0.12" material="fs_yellow"/>
-    <xacro:vbox xyz="-2.7 -0.98 0.49" size="3.7 0.04 0.12" material="fs_yellow"/>
-    <xacro:vcyl xyz="-1.6 0 1.0" r="0.55" l="1.2" rpy="0 ${PI/2} 0" material="fs_blue"/>
-    <xacro:vcyl xyz="-1.6 0 1.57" r="0.12" l="0.08" material="fs_steel"/>
-    <xacro:macro name="rack" params="y">
-      <xacro:vbox xyz="-3.4 ${y} 0.45" size="2.14 0.46 0.03" material="fs_steel"/>
-      <xacro:vbox xyz="-3.4 ${y} 0.50" size="2.1 0.4 0.06" material="fs_leaf"/>
-      <xacro:vbox xyz="-3.4 ${y} 0.97" size="2.14 0.46 0.03" material="fs_steel"/>
-      <xacro:vbox xyz="-3.4 ${y} 1.02" size="2.1 0.4 0.06" material="fs_leaf"/>
-      <xacro:vbox xyz="-3.4 ${y} 1.49" size="2.14 0.46 0.03" material="fs_steel"/>
-      <xacro:vbox xyz="-3.4 ${y} 1.54" size="2.1 0.4 0.06" material="fs_leaf"/>
-      <xacro:vbox xyz="-2.33 ${y} 1.36" size="0.05 0.05 1.86" material="fs_steel"/>
-      <xacro:vbox xyz="-4.47 ${y} 1.36" size="0.05 0.05 1.86" material="fs_steel"/>
-    </xacro:macro>
-    <xacro:rack y="0.68"/>
-    <xacro:rack y="-0.68"/>
-    <xacro:vbox xyz="-3.4 0 2.3" size="2.2 2.0 0.02" material="fs_shade"/>
-    <!-- boom rail on the left side -->
-    <xacro:vbox xyz="-1.6 1.0 0.45" size="2.8 0.08 0.08" material="fs_steel"/>
+    <xacro:mesh_visual robot="${R}" link="trailer_link"/>
   </link>
-  <xacro:person parent="trailer_link" name="loader" xyz="-3.1 0 0.43" rpy="0 0 ${PI/2}" cloth="fs_orange"/>
-  <xacro:wheel name="trailer_fl_wheel" parent="trailer_link" xyz="-3.1 0.93 -0.08" r="0.42" w="0.26" m="30" rim="fs_graphite"/>
-  <xacro:wheel name="trailer_fr_wheel" parent="trailer_link" xyz="-3.1 -0.93 -0.08" r="0.42" w="0.26" m="30" rim="fs_graphite"/>
-  <xacro:wheel name="trailer_rl_wheel" parent="trailer_link" xyz="-3.95 0.93 -0.08" r="0.42" w="0.26" m="30" rim="fs_graphite"/>
-  <xacro:wheel name="trailer_rr_wheel" parent="trailer_link" xyz="-3.95 -0.93 -0.08" r="0.42" w="0.26" m="30" rim="fs_graphite"/>
+  <xacro:person parent="trailer_link" name="loader" xyz="-3.1 0 0.43" rpy="0 0 ${PI/2}" robot="${R}"/>
+  <xacro:wheel name="trailer_fl_wheel" parent="trailer_link" xyz="-3.1 0.93 -0.08" r="0.42" w="0.26" m="30" robot="${R}"/>
+  <xacro:wheel name="trailer_fr_wheel" parent="trailer_link" xyz="-3.1 -0.93 -0.08" r="0.42" w="0.26" m="30" robot="${R}"/>
+  <xacro:wheel name="trailer_rl_wheel" parent="trailer_link" xyz="-3.95 0.93 -0.08" r="0.42" w="0.26" m="30" robot="${R}"/>
+  <xacro:wheel name="trailer_rr_wheel" parent="trailer_link" xyz="-3.95 -0.93 -0.08" r="0.42" w="0.26" m="30" robot="${R}"/>
 
   <!-- ===================== boom ===================== -->
   <joint name="sled_joint" type="prismatic">
@@ -103,9 +74,7 @@
   </joint>
   <link name="sled_link">
     <xacro:box_inertial m="150" x="0.3" y="2.7" z="1.2"><origin xyz="0 0.8 0.8"/></xacro:box_inertial>
-    <xacro:vbox xyz="0 0 0.55" size="0.12 0.12 1.15" material="fs_yellow"/>
-    <xacro:vbox xyz="0 1.35 1.07" size="0.12 2.75 0.12" material="fs_yellow"/>
-    <xacro:vbox xyz="0 0.45 0.8" size="0.06 0.95 0.06" rpy="0.71 0 0" material="fs_steel"/>
+    <xacro:mesh_visual robot="${R}" link="sled_link"/>
   </link>
   <joint name="carriage_joint" type="prismatic">
     <parent link="sled_link"/><child link="carriage_link"/>
@@ -114,11 +83,32 @@
   </joint>
   <link name="carriage_link">
     <xacro:box_inertial m="60" x="0.32" y="0.32" z="0.3"><origin xyz="0 0 0"/></xacro:box_inertial>
-    <xacro:vbox xyz="0 0 0" size="0.32 0.32 0.3" material="fs_yellow"/>
-    <xacro:vcyl xyz="0 0 0.25" r="0.09" l="0.2" material="fs_graphite"/>
-    <xacro:vbox xyz="0.17 0 -0.5" size="0.04 0.2 0.8" material="fs_graphite"/>
+    <xacro:mesh_visual robot="${R}" link="carriage_link"/>
   </link>
-  <xacro:auger_head parent="carriage_link" xyz="0 0 -0.25" length="0.95" diameter="0.15" stroke="1.3"/>
+  <joint name="carousel_joint" type="continuous">
+    <parent link="carriage_link"/><child link="carousel_link"/>
+    <origin xyz="-0.35 0 0.2"/><axis xyz="0 0 1"/><limit effort="200" velocity="3"/><dynamics damping="1"/>
+  </joint>
+  <link name="carousel_link">
+    <inertial><mass value="4"/><inertia ixx="0.05" iyy="0.05" izz="0.09" ixy="0" ixz="0" iyz="0"/></inertial>
+    <xacro:mesh_visual robot="${R}" link="carousel_link"/>
+  </link>
+  <joint name="turret_joint" type="revolute">
+    <parent link="carriage_link"/><child link="turret_link"/>
+    <origin xyz="0 0 -0.18"/><axis xyz="0 0 1"/>
+    <limit lower="-0.2" upper="3.5" effort="2000" velocity="3"/><dynamics damping="5"/>
+  </joint>
+  <link name="turret_link">
+    <inertial><mass value="25"/><inertia ixx="0.5" iyy="0.5" izz="0.9" ixy="0" ixz="0" iyz="0"/></inertial>
+    <xacro:mesh_visual robot="${R}" link="turret_link"/>
+  </link>
+  <xacro:auger_head robot="${R}" parent="turret_link" xyz="0.2 0 -0.06" length="0.95" stroke="1.3"/>
+  <xacro:duckbill_head robot="${R}" parent="turret_link" xyz="-0.2 0 -0.06" stroke="1.6" tamp_xyz="-0.2 0 -0.20" tamp_stroke="1.6"/>
+
+  <xacro:if value="$(arg inspect_cam)">
+    <!-- rides on the boom carriage so the head stays in frame -->
+    <xacro:inspect_camera ns="${ns}" parent="carriage_link" xyz="0.0 3.0 -0.8" rpy="0 0.0 -1.5708" hfov="1.2"/>
+  </xacro:if>
 
   <!-- ===================== Gazebo systems ===================== -->
   <gazebo>
@@ -140,6 +130,12 @@
     <xacro:common_plugins ns="${ns}"/>
     <xacro:pos_controller ns="${ns}" joint="sled_joint" p="2.5" vmax="0.9" init="0.0"/>
     <xacro:pos_controller ns="${ns}" joint="carriage_joint" p="2.5" vmax="0.6" init="1.5"/>
+    <xacro:pos_controller ns="${ns}" joint="turret_joint" p="4" vmax="2.0" init="0.0"/>
+    <xacro:pos_controller ns="${ns}" joint="carousel_joint" p="4" vmax="2.0" init="0.0"/>
+    <xacro:pos_controller ns="${ns}" joint="duckbill_feed_joint" p="6" vmax="1.0" init="0.0"/>
+    <xacro:pos_controller ns="${ns}" joint="jaw_l_joint" p="6" vmax="2.0" init="0.0"/>
+    <xacro:pos_controller ns="${ns}" joint="jaw_r_joint" p="6" vmax="2.0" init="0.0"/>
+    <xacro:pos_controller ns="${ns}" joint="tamp_joint" p="6" vmax="1.0" init="0.0"/>
     <plugin filename="fs_terramechanics_system" name="fs::Terramechanics">
       <soil_map>$(arg soil_map)</soil_map>
       <topic>/model/${ns}/terramechanics</topic>
@@ -160,6 +156,12 @@
       <max_thrust>8000</max_thrust><max_feed>0.15</max_feed><rpm>90</rpm><max_stroke>1.3</max_stroke>
       <free_speed>0.5</free_speed><retract_speed>0.6</retract_speed>
       <cmd_topic>/model/${ns}/auger/cmd</cmd_topic><status_topic>/model/${ns}/auger/status</status_topic>
+    </plugin>
+    <plugin filename="fs_plug_inventory_system" name="fs::PlugInventory">
+      <xacro:plug_inventory_begin ns="${ns}"/>
+      <!-- 12 carousel cups at r 0.15 m; cup 0 sits over the chute (carousel +x) -->
+      <carrier><name>carousel</name><link>carousel_link</link><ring><radius>0.15</radius><count>12</count><tiers>1</tiers><z0>0.008</z0><dz>0</dz></ring><fill>12</fill></carrier>
+      <holder><name>duckbill</name><link>duckbill_feed_link</link><xyz>0 0 -0.40</xyz></holder>
     </plugin>
   </gazebo>
 </robot>

@@ -11,6 +11,7 @@ setup(
                 ("share/fs_bringup/launch", glob("launch/*.launch.py")),
                 ("share/fs_bringup/rviz", glob("rviz/*.rviz"))],
     install_requires=["setuptools"],
+    extras_require={"test": ["pytest"]},
     zip_safe=True,
     maintainer="ForestStark",
     maintainer_email="garg.prateek@alumni.iitd.ac.in",

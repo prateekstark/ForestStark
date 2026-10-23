@@ -1,0 +1,869 @@
+<meta charset="utf-8">
+<title>ForestStark CAD</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: workbench. Part tree on the left, the model on a drafting stage in the middle,
+   inspector + mechanism controls on the right; stacks to one column on a phone. */
+:root {
+  --paper: #eceee9;      /* page ground, a grey with a little leaf in it */
+  --panel: #f6f7f3;
+  --ink: #1c221e;
+  --muted: #5b665e;
+  --line: #d3d8d0;
+  --accent: #2d6a4c;     /* forest green: selection, active state */
+  --accent-ink: #ffffff;
+  --stage: #dfe3dc;      /* 3D background */
+  --grid: #b9c0b6;
+  --pick: #1aa38f;       /* highlight in the model, distinct from the robots' RAL yellow */
+  --f-display: "Barlow Condensed", "Arial Narrow", sans-serif;
+  --f-body: "IBM Plex Sans", system-ui, sans-serif;
+  --f-mono: "IBM Plex Mono", ui-monospace, monospace;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --paper: #141915; --panel: #1b211d; --ink: #e3e8e2; --muted: #98a39a; --line: #2d3630;
+  --accent: #74c497; --accent-ink: #0f1a13; --stage: #1e2520; --grid: #36413a; --pick: #3fd3bd; color-scheme: dark } }
+:root[data-theme="dark"] {
+  --paper: #141915; --panel: #1b211d; --ink: #e3e8e2; --muted: #98a39a; --line: #2d3630;
+  --accent: #74c497; --accent-ink: #0f1a13; --stage: #1e2520; --grid: #36413a; --pick: #3fd3bd; color-scheme: dark }
+
+* { box-sizing: border-box }
+html, body { height: 100% }
+body { background: var(--paper); color: var(--ink); font: 14px/1.45 var(--f-body); margin: 0 }
+.wrap { padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-block: 14px 18px;
+  display: grid; grid-template-rows: auto 1fr; gap: 12px; height: 100% }
+header { display: flex; flex-wrap: wrap; align-items: end; gap: 10px 24px }
+h1 { font: 700 26px/1 var(--f-display); letter-spacing: .02em; margin: 0; text-transform: uppercase }
+h1 small { font: 500 14px var(--f-body); letter-spacing: 0; text-transform: none; color: var(--muted); margin-left: 8px }
+.tabs { display: flex; gap: 4px; flex-wrap: wrap }
+.tab { font: 600 16px/1 var(--f-display); letter-spacing: .06em; text-transform: uppercase; border: 1px solid var(--line);
+  background: var(--panel); color: var(--ink); padding: 8px 14px 7px; border-radius: 3px; cursor: pointer }
+.tab span { font: 400 12px var(--f-body); letter-spacing: 0; text-transform: none; color: var(--muted); margin-left: 6px }
+.tab[aria-selected="true"] { background: var(--accent); color: var(--accent-ink); border-color: var(--accent) }
+.tab[aria-selected="true"] span { color: inherit; opacity: .8 }
+.stats { margin-left: auto; display: flex; gap: 18px; flex-wrap: wrap; font: 12px var(--f-mono); color: var(--muted); font-variant-numeric: tabular-nums }
+.stats b { display: block; font: 500 15px var(--f-mono); color: var(--ink) }
+
+main { display: grid; grid-template-columns: 270px minmax(0, 1fr) 310px; gap: 12px; min-height: 0 }
+aside { background: var(--panel); border: 1px solid var(--line); border-radius: 4px; min-height: 0; overflow: auto; display: flex; flex-direction: column }
+section.blk { padding: 12px 14px; border-bottom: 1px solid var(--line); display: grid; gap: 8px }
+section.blk:last-child { border-bottom: 0 }
+h2 { font: 600 13px/1 var(--f-display); letter-spacing: .12em; text-transform: uppercase; color: var(--muted); margin: 0; display: flex; align-items: center; gap: 8px }
+h2 .sp { flex: 1 }
+
+.stage { position: relative; background: var(--stage); border: 1px solid var(--line); border-radius: 4px; overflow: hidden; min-height: 320px }
+.stage canvas { display: block; width: 100%; height: 100%; touch-action: none }
+.overlay { position: absolute; inset: 0; display: grid; place-items: center; text-align: center; padding: 24px; color: var(--muted); pointer-events: none }
+.bar { width: min(260px, 70%); height: 4px; background: var(--line); border-radius: 2px; overflow: hidden; margin: 10px auto 0 }
+.bar i { display: block; height: 100%; width: 0; background: var(--accent) }
+.caption { position: absolute; left: 12px; right: 12px; bottom: 12px; display: flex; gap: 10px; align-items: center; flex-wrap: wrap;
+  background: color-mix(in srgb, var(--panel) 92%, transparent); border: 1px solid var(--line); border-radius: 4px; padding: 8px 10px }
+.caption .step { flex: 1 1 220px; min-width: 0; font-weight: 500 }
+.caption input[type=range] { flex: 1 1 160px }
+.tc { font: 12px var(--f-mono); color: var(--muted); font-variant-numeric: tabular-nums; min-width: 72px; text-align: right }
+.hint { position: absolute; top: 10px; left: 12px; font: 12px var(--f-mono); color: var(--muted); pointer-events: none }
+
+button.b { font: 500 13px var(--f-body); border: 1px solid var(--line); background: var(--paper); color: var(--ink); padding: 6px 10px; border-radius: 3px; cursor: pointer }
+button.b.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent) }
+button.b:disabled { opacity: .45; cursor: default }
+button:focus-visible, input:focus-visible, .tab:focus-visible, .row:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px }
+.btns { display: flex; flex-wrap: wrap; gap: 6px }
+
+input[type=search] { width: 100%; font: 13px var(--f-body); padding: 6px 8px; border: 1px solid var(--line); border-radius: 3px; background: var(--paper); color: var(--ink) }
+input[type=range] { accent-color: var(--accent); width: 100% }
+.tree { padding: 4px 0 10px; font-size: 13px }
+.link > .row { font-weight: 600 }
+.row { display: grid; grid-template-columns: 18px 1fr auto 22px; align-items: center; gap: 4px; padding: 3px 10px 3px 8px; cursor: pointer; border-left: 3px solid transparent }
+.row:hover { background: color-mix(in srgb, var(--accent) 8%, transparent) }
+.row.sel { border-left-color: var(--accent); background: color-mix(in srgb, var(--accent) 14%, transparent) }
+.row .nm { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0 }
+.row .kg { font: 11px var(--f-mono); color: var(--muted); font-variant-numeric: tabular-nums }
+.row .tw, .row .eye { border: 0; background: none; color: var(--muted); cursor: pointer; padding: 0; font: 12px var(--f-mono); width: 18px; height: 18px }
+.row.hid .nm { color: var(--muted); text-decoration: line-through }
+.parts { display: none }
+.link.open .parts { display: block }
+.parts .row { padding-left: 26px; font-weight: 400 }
+.sw { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 6px; vertical-align: -1px; border: 1px solid var(--line) }
+
+dl { margin: 0; display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; font-size: 13px }
+dt { color: var(--muted) }
+dd { margin: 0; font-family: var(--f-mono); font-variant-numeric: tabular-nums; overflow-wrap: anywhere }
+.sel-name { font: 600 20px/1.1 var(--f-display); letter-spacing: .02em }
+.muted { color: var(--muted); font-size: 12.5px }
+.chips { display: flex; flex-wrap: wrap; gap: 6px }
+.chip { font: 12px var(--f-body); border: 1px solid var(--line); border-radius: 999px; padding: 3px 10px; background: var(--paper); color: var(--ink); cursor: pointer }
+.chip[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); border-color: var(--accent) }
+.ctl { display: grid; grid-template-columns: 1fr auto; gap: 2px 8px; align-items: center; font-size: 12.5px }
+.ctl label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
+.ctl output { font: 11.5px var(--f-mono); color: var(--muted); font-variant-numeric: tabular-nums }
+.ctl input { grid-column: 1 / -1 }
+.joints { display: grid; gap: 8px }
+code { font: 12px var(--f-mono) }
+
+@media (max-width: 1100px) { main { grid-template-columns: 240px minmax(0, 1fr) } aside.right { grid-column: 1 / -1; max-height: none } }
+@media (max-width: 720px) {
+  html, body { height: auto }
+  .wrap { height: auto }
+  main { grid-template-columns: minmax(0, 1fr) }
+  .stage { height: 62vh; min-height: 340px; order: -1 }
+  aside { max-height: 420px }
+  .stats { margin-left: 0 }
+}
+@media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto } }
+</style>
+
+<div class="wrap">
+  <header>
+    <h1>ForestStark CAD <small>assemblies posed from the URDF joint tree</small></h1>
+    <div class="tabs" role="tablist" id="tabs">
+      <button class="tab" role="tab" id="tab-katar" data-r="katar">A · Katar<span>tractor planter</span></button>
+      <button class="tab" role="tab" id="tab-jaal" data-r="jaal">B · Jaal<span>drum fleet</span></button>
+      <button class="tab" role="tab" id="tab-pahadi" data-r="pahadi">C · Pahadi<span>slope tracker</span></button>
+    </div>
+    <div class="stats" id="stats"></div>
+  </header>
+  <main>
+    <aside aria-label="Parts">
+      <section class="blk">
+        <h2>Parts <span class="sp"></span><button class="b" id="showall" type="button">Show all</button></h2>
+        <input type="search" id="filter" placeholder="Filter parts, links, notes" autocomplete="off">
+        <div class="chips" id="subs"></div>
+      </section>
+      <div class="tree" id="tree"></div>
+    </aside>
+
+    <div class="stage" id="stage">
+      <canvas id="cv"></canvas>
+      <div class="hint" id="hint">drag to orbit · right-drag to pan · scroll to zoom · click a part</div>
+      <div class="overlay" id="overlay"><div><div id="ovtext">Loading model…</div><div class="bar"><i id="prog"></i></div></div></div>
+      <div class="caption">
+        <button class="b primary" id="play" type="button">▶ Plant cycle</button>
+        <div class="step" id="step">Press play to watch one sapling go from the store into the ground.</div>
+        <input type="range" id="scrub" min="0" max="100" step="0.01" value="0" aria-label="Cycle time">
+        <span class="tc" id="tc">0.0 s</span>
+      </div>
+    </div>
+
+    <aside class="right" aria-label="Inspector">
+      <section class="blk" id="insp">
+        <h2>Selection</h2>
+        <div class="muted">Click a part in the model or the list.</div>
+      </section>
+      <section class="blk">
+        <h2>View</h2>
+        <div class="ctl"><label for="explode">Explode</label><output id="explode-o">0%</output>
+          <input type="range" id="explode" min="0" max="1.2" step="0.01" value="0"></div>
+        <div class="ctl"><label for="cut">Section plane</label><output id="cut-o">off</output>
+          <input type="range" id="cut" min="0" max="100" step="0.5" value="100"></div>
+        <div class="chips" id="cutaxis">
+          <button class="chip" type="button" data-a="x" aria-pressed="true">along length</button>
+          <button class="chip" type="button" data-a="y" aria-pressed="false">across width</button>
+          <button class="chip" type="button" data-a="z" aria-pressed="false">top down</button>
+        </div>
+        <div class="btns">
+          <button class="b" type="button" id="isolate">Isolate selection</button>
+          <button class="b" type="button" id="fit">Fit view</button>
+          <button class="b" type="button" id="xray" aria-pressed="false">X-ray</button>
+        </div>
+      </section>
+      <section class="blk">
+        <h2>Mechanism <span class="sp"></span><button class="b" type="button" id="home">Home pose</button></h2>
+        <div class="joints" id="joints"></div>
+      </section>
+      <section class="blk">
+        <h2>Files</h2>
+        <div class="muted">STEP assemblies for CAD review live in the repository at <code>cad/out/</code>:
+          <code id="stepname">katar.step</code> (full machine) and <code id="subname">katar_planting_head.step</code> (plant handling only).
+          Rebuild with <code>cad/.venv/bin/python cad/build.py</code>.</div>
+      </section>
+    </aside>
+  </main>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+<script>
+"use strict";
+// ---------------------------------------------------------------- robot data
+const R = {
+  katar: {
+    sub: ["Planting head", ["carriage_link", "carousel_link", "turret_link", "auger_feed_link", "auger_link", "duckbill_feed_link", "jaw_l_link", "jaw_r_link", "tamp_link"]],
+    step: "katar_planting_head.step",
+    blurb: "Plugs ride in rack trays; a loader tops up a 12-cup carousel over the chute. The turret carries the auger on one side and the duckbill on the other.",
+  },
+  jaal: {
+    sub: ["Plant handling", ["drum_f_link", "drum_r_link", "picker_x_link", "picker_z_link", "picker_y_link", "finger_a_link", "finger_b_link", "shuttle_link", "auger_feed_link", "auger_link", "duckbill_feed_link", "jaw_l_link", "jaw_r_link", "tamp_link"]],
+    step: "jaal_plant_handling.step",
+    blurb: "Two drums of 4 × 45 pockets. A gantry picker carries each plug to a funnel feeding the duckbill on the rear shuttle.",
+  },
+  pahadi: {
+    sub: ["Arm and gripper", ["arm_base_link", "arm_yaw_link", "arm_upper_link", "arm_fore_link", "arm_wrist_link", "finger_l_link", "finger_r_link", "auger_feed_link", "auger_link"]],
+    step: "pahadi_arm_and_gripper.step",
+    blurb: "One 50-cell tray sits within the arm's reach; three spares wait in the rear magazine. The wrist carries the auger and a parallel gripper.",
+  },
+};
+const DUCK = ["duckbill_feed_link", "jaw_l_link", "jaw_r_link"];
+const reach = (links, depth) => ({ reach: links, depth });   // feed value that puts the links' lowest point `depth` m below ground
+// Plant cycles: moves [t0, t1, {joint: value}], events [t, "attach", link, [x,y,z] mm] | [t, "plant"], captions [t, text].
+const CYCLES = {
+  katar: { T: 16.5,
+    moves: [
+      [0.2, 1.0, { carousel_joint: -0.5236 }],
+      [1.2, 3.0, { auger_feed_joint: reach(["auger_link"], 0), auger_spin_joint: 10 }],
+      [3.0, 5.2, { auger_feed_joint: reach(["auger_link"], 0.30), auger_spin_joint: 45 }],
+      [5.4, 6.8, { auger_feed_joint: 0, auger_spin_joint: 55 }],
+      [7.0, 8.6, { turret_joint: Math.PI }],
+      [8.8, 10.0, { duckbill_feed_joint: reach(DUCK, 0.14) }],
+      [10.1, 10.5, { jaw_l_joint: 0.5, jaw_r_joint: 0.5 }],
+      [10.6, 11.4, { duckbill_feed_joint: reach(DUCK, -0.35) }],
+      [11.4, 11.7, { jaw_l_joint: 0, jaw_r_joint: 0 }],
+      [11.6, 12.6, { tamp_joint: reach(["tamp_link"], 0.01) }],
+      [13.0, 14.0, { tamp_joint: 0, duckbill_feed_joint: 0 }],
+      [13.8, 15.4, { turret_joint: 0 }],
+    ],
+    events: [[1.0, "attach", "duckbill_feed_link", [0, 0, -400]], [10.4, "plant"]],
+    captions: [[0, "The carousel turns the next cup over the chute and the plug drops into the duckbill."],
+      [1.2, "The auger feeds down and bores a 300 mm hole."], [5.4, "The auger retracts."],
+      [7.0, "The turret swings the loaded duckbill over the hole."], [8.8, "The duckbill pushes into the hole."],
+      [10.1, "The jaws open and the plug stays in the ground."], [10.6, "The duckbill withdraws round the seedling and closes."],
+      [11.6, "The tamp ring firms the soil."], [13.8, "The turret swings back while the water dose runs. Ready for the next spot."]],
+  },
+  jaal: { T: 15.5,
+    moves: [
+      [0.0, 1.0, { drum_f_joint: -0.42 }],
+      [0.8, 2.2, { picker_x_joint: 0.55 }],
+      [1.0, 2.4, { auger_feed_joint: reach(["auger_link"], 0), auger_spin_joint: 8 }],
+      [2.2, 3.2, { picker_z_joint: 1.303 }],
+      [2.4, 5.0, { auger_feed_joint: reach(["auger_link"], 0.25), auger_spin_joint: 40 }],
+      [3.2, 3.7, { picker_y_joint: 0.12 }],
+      [3.7, 4.0, { finger_a_joint: 0.012, finger_b_joint: 0.012 }],
+      [4.1, 4.5, { picker_z_joint: 1.253 }],
+      [4.5, 5.0, { picker_y_joint: 0 }],
+      [5.0, 6.0, { picker_z_joint: 0.74 }],
+      [5.2, 6.4, { auger_feed_joint: 0, auger_spin_joint: 48 }],
+      [6.0, 7.4, { picker_x_joint: -1.2 }],
+      [7.4, 7.7, { finger_a_joint: 0, finger_b_joint: 0 }],
+      [8.0, 8.8, { shuttle_joint: -0.28 }],
+      [8.9, 9.9, { duckbill_feed_joint: reach(DUCK, 0.14) }],
+      [10.0, 10.4, { jaw_l_joint: 0.5, jaw_r_joint: 0.5 }],
+      [10.5, 11.3, { duckbill_feed_joint: reach(DUCK, -0.35) }],
+      [11.3, 11.6, { jaw_l_joint: 0, jaw_r_joint: 0 }],
+      [11.4, 12.4, { tamp_joint: reach(["tamp_link"], 0.01) }],
+      [12.8, 13.8, { tamp_joint: 0, duckbill_feed_joint: 0 }],
+      [13.6, 14.6, { shuttle_joint: 0 }],
+    ],
+    events: [[4.0, "attach", "picker_y_link", [0, -190, -60]], [7.8, "attach", "duckbill_feed_link", [0, 0, -380]], [10.3, "plant"]],
+    captions: [[0, "The drum turns the next pocket to the pick window while the auger starts boring."],
+      [0.8, "The picker runs forward along the roof rail and drops to the pocket's tier."],
+      [3.2, "It reaches in and the fingers grip the root ball."], [4.1, "It lifts the plug out of the pocket."],
+      [5.0, "It carries the plug back over the funnel."], [7.4, "The fingers open and the plug drops down the funnel into the duckbill."],
+      [8.0, "The shuttle swaps the duckbill over the hole."], [8.9, "The duckbill pushes in, then the jaws open."],
+      [10.5, "The duckbill withdraws round the seedling and closes."], [11.4, "The tamp ring firms the soil."],
+      [13.6, "The shuttle returns while the water dose runs."]],
+  },
+  pahadi: { T: 27,
+    moves: [
+      [0.0, 1.5, { arm_yaw_joint: -1.024 }],
+      [1.5, 3.5, { arm_shoulder_joint: -0.209, arm_elbow_joint: 1.129, arm_wrist_joint: 0.651 }],
+      [3.6, 7.4, { arm_shoulder_joint: 0.15, arm_elbow_joint: 0.784, arm_wrist_joint: 0.637, auger_spin_joint: 60 }],
+      [7.5, 9.0, { arm_shoulder_joint: -0.209, arm_elbow_joint: 1.129, arm_wrist_joint: 0.651, auger_spin_joint: 70 }],
+      [9.1, 10.6, { arm_shoulder_joint: -0.9, arm_elbow_joint: 2.2, arm_wrist_joint: -1.3 }],
+      [10.6, 12.6, { arm_yaw_joint: 2.875 }],
+      [12.6, 14.0, { arm_shoulder_joint: -1.621, arm_elbow_joint: 2.499, arm_wrist_joint: -0.878 }],
+      [14.0, 14.8, { arm_shoulder_joint: -1.361, arm_elbow_joint: 2.542, arm_wrist_joint: -1.181 }],
+      [14.8, 15.2, { finger_l_joint: 0.016, finger_r_joint: 0.016 }],
+      [15.3, 16.2, { arm_shoulder_joint: -1.621, arm_elbow_joint: 2.499, arm_wrist_joint: -0.878 }],
+      [16.2, 17.6, { arm_shoulder_joint: -0.9, arm_elbow_joint: 2.2, arm_wrist_joint: -1.3 }],
+      [17.6, 19.6, { arm_yaw_joint: -1.024 }],
+      [19.6, 21.0, { arm_shoulder_joint: -0.109, arm_elbow_joint: 1.148, arm_wrist_joint: -1.039 }],
+      [21.0, 21.8, { arm_shoulder_joint: 0.265, arm_elbow_joint: 0.74, arm_wrist_joint: -1.005 }],
+      [21.8, 22.2, { finger_l_joint: 0, finger_r_joint: 0 }],
+      [22.4, 23.4, { arm_shoulder_joint: -0.109, arm_elbow_joint: 1.148, arm_wrist_joint: -1.039 }],
+      [23.4, 25.0, { arm_shoulder_joint: -1.35, arm_elbow_joint: 2.6, arm_wrist_joint: 0.3 }],
+      [25.0, 26.5, { arm_yaw_joint: 0 }],
+    ],
+    events: [[15.2, "attach", "arm_wrist_link", [70, 0, -240]], [22.2, "plant"]],
+    captions: [[0, "The arm turns to the planting spot."], [1.5, "It reaches out with the auger pointing straight down."],
+      [3.6, "It bores. In stony laterite it switches to the percussive pick."], [7.5, "The auger withdraws."],
+      [9.1, "The arm folds and turns back to the active tray."], [12.6, "It lowers the gripper onto the next cell."],
+      [14.8, "The fingers grip the root ball."], [15.3, "It lifts the plug out and carries it to the hole."],
+      [19.6, "It lowers the plug into the hole."], [21.8, "It releases the plug."],
+      [22.4, "It lifts clear while the water dose runs and the half-moon bund is scraped."], [23.4, "The arm stows."]],
+  },
+};
+const MAT_NAMES = { yellow: "RAL 1003 signal yellow", graphite: "RAL 7024 graphite", steel: "steel", alu: "aluminium", rubber: "rubber",
+  blue: "HDPE tank", tray: "HDPE (moulded)", orange: "RAL 2004 orange", glass: "glass", solar: "PV module", white: "ABS",
+  hose: "hose", brass: "brass", leaf: "seedling canopy", leaf2: "seedling canopy", soil: "root ball", skin: "operator", cloth: "operator", shade: "shade net" };
+const MAT_RGB = { yellow: [.886, .647, .078], graphite: [.19, .21, .2], steel: [.62, .65, .66], alu: [.78, .8, .81], rubber: [.1, .11, .11],
+  blue: [.18, .42, .56], leaf: [.31, .6, .25], leaf2: [.24, .5, .21], soil: [.37, .26, .17], tray: [.15, .16, .16], orange: [.88, .42, .11],
+  glass: [.66, .8, .84], solar: [.12, .2, .33], white: [.93, .93, .9], skin: [.72, .5, .35], cloth: [.23, .35, .55], shade: [.21, .37, .23],
+  brass: [.71, .55, .25], hose: [.08, .08, .09] };
+
+// ---------------------------------------------------------------- dom helpers
+const $ = (id) => document.getElementById(id);
+const el = (tag, cls, txt) => { const e = document.createElement(tag); if (cls) e.className = cls; if (txt != null) e.textContent = txt; return e; };
+const human = (s) => s.replace(/_link$/, "").replace(/_joint$/, "").replace(/_\d+$/, "").replace(/_/g, " ");
+const kg = (v) => v >= 100 ? v.toFixed(0) : v >= 10 ? v.toFixed(1) : v.toFixed(2);
+const css = (n) => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const store = { get(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }, set(k, v) { try { localStorage.setItem(k, v); } catch (e) {} } };
+
+// ---------------------------------------------------------------- three setup
+const cv = $("cv"), stage = $("stage");
+let renderer = null;
+try { renderer = new THREE.WebGLRenderer({ canvas: cv, antialias: true }); } catch (e) { renderer = null; }
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(35, 1, 20, 200000);
+let controls = null;
+const cutPlane = new THREE.Plane(new THREE.Vector3(-1, 0, 0), 0);
+if (renderer) {
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+  renderer.outputEncoding = THREE.sRGBEncoding;
+  renderer.shadowMap.enabled = true;
+  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  controls = new THREE.OrbitControls(camera, cv);
+  controls.enableDamping = true;
+  controls.dampingFactor = 0.12;
+  scene.add(new THREE.HemisphereLight(0xf4f6ff, 0x6b5a45, 0.75));
+  const sun = new THREE.DirectionalLight(0xffffff, 0.9);
+  sun.position.set(6000, 12000, 8000);
+  sun.castShadow = true;
+  sun.shadow.mapSize.set(2048, 2048);
+  Object.assign(sun.shadow.camera, { left: -6000, right: 6000, top: 6000, bottom: -6000, near: 100, far: 40000 });
+  scene.add(sun, sun.target);
+  const fill = new THREE.DirectionalLight(0xffffff, 0.25);
+  fill.position.set(-8000, 4000, -6000);
+  scene.add(fill);
+} else {
+  $("ovtext").textContent = "This browser has WebGL turned off, so the 3D model cannot be shown. The part list and BOM still work once loaded.";
+}
+let ground = null, grid = null;
+function applyTheme() {
+  scene.background = new THREE.Color(css("--stage") || "#dfe3dc");
+  if (grid) { grid.material.color = new THREE.Color(css("--grid")); }
+}
+applyTheme();
+window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", applyTheme);
+new MutationObserver(applyTheme).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+
+function resize() {
+  const w = stage.clientWidth, h = stage.clientHeight;
+  camera.aspect = w / Math.max(h, 1);
+  camera.updateProjectionMatrix();
+  if (renderer) renderer.setSize(w, h, false);
+}
+new ResizeObserver(resize).observe(stage);
+
+// ---------------------------------------------------------------- model state
+const loader = renderer ? new THREE.GLTFLoader() : null;
+const cache = {};
+let M = null;            // current model: {robot, root, links, parts, joints, q, bom, ...}
+let selected = null;     // {type: "part"|"link", key}
+let xray = false;
+
+async function fetchText(u) { const r = await fetch(u); if (!r.ok) throw new Error(`${u}: ${r.status}`); return r.text(); }
+function parseCSV(t) {
+  const [head, ...rows] = t.trim().split(/\r?\n/);
+  const keys = head.split(",");
+  return rows.map((line) => {
+    const out = [], re = /("([^"]|"")*"|[^,]*)(,|$)/g; let m;
+    while ((m = re.exec(line)) && out.length < keys.length) { let v = m[1]; if (v.startsWith('"')) v = v.slice(1, -1).replace(/""/g, '"'); out.push(v); if (m[3] === "") break; }
+    return Object.fromEntries(keys.map((k, i) => [k, out[i] ?? ""]));
+  });
+}
+
+function loadGLB(url) {
+  return new Promise((res, rej) => loader.load(url, res, (e) => {
+    if (e.lengthComputable) $("prog").style.width = `${(100 * e.loaded / e.total).toFixed(0)}%`;
+  }, rej));
+}
+// The published page carries each model as gzipped base64 text (<robot>_glb.txt); a local
+// checkout serves the plain .glb from cad/out.
+async function loadModel(robot) {
+  try {
+    const r = await fetch(`out/${robot}_glb.txt`);
+    if (r.ok && typeof DecompressionStream === "function") {
+      $("prog").style.width = "40%";
+      const bin = Uint8Array.from(atob((await r.text()).trim()), (c) => c.charCodeAt(0));
+      const buf = await new Response(new Blob([bin]).stream().pipeThrough(new DecompressionStream("gzip"))).arrayBuffer();
+      $("prog").style.width = "80%";
+      return await new Promise((res, rej) => loader.parse(buf, "", res, rej));
+    }
+  } catch (e) { /* fall back to the .glb */ }
+  return loadGLB(`out/${robot}.glb`);
+}
+
+async function loadRobot(robot) {
+  if (cache[robot]) return cache[robot];
+  const [jtxt, btxt] = await Promise.all([fetchText(`out/${robot}_joints.json`), fetchText(`out/${robot}_bom.csv`)]);
+  const jd = JSON.parse(jtxt), bom = parseCSV(btxt);
+  let gltf = null;
+  if (loader) gltf = await loadModel(robot);
+  const m = { robot, joints: jd.joints, pose0: jd.pose, bom, q: {}, links: {}, parts: [], gltf };
+  for (const j of Object.values(m.joints)) if (j.type !== "fixed") m.q[j.name] = m.pose0[j.name] ?? 0;
+  if (gltf) prepareScene(m);
+  cache[robot] = m;
+  return m;
+}
+
+function prepareScene(m) {
+  const root = m.gltf.scene;
+  m.root = root;
+  // the assembly node (y-up rotation) holds one child per URDF link; each link holds its parts
+  let asm = root;
+  while (asm.children.length === 1 && !(asm.children[0].name in m.joints) && asm.children[0].name !== "base_link") asm = asm.children[0];
+  m.asm = asm;
+  for (const ln of asm.children) {
+    m.links[ln.name] = ln;
+    ln.matrixAutoUpdate = false;
+    for (const pn of ln.children) {
+      const part = { node: pn, link: ln.name, name: pn.name, base: pn.name.replace(/(_\d+)+$/, ""), meshes: [] };  // three.js appends _N to repeated names
+      pn.traverse((o) => { if (o.isMesh) {
+        o.castShadow = o.receiveShadow = true;
+        o.material = o.material.clone();
+        o.material.side = THREE.DoubleSide;
+        o.userData.orig = o.material;
+        o.userData.part = part;
+        part.meshes.push(o);
+      } });
+      // local centre for exploding (vertices are in link coordinates)
+      const box = new THREE.Box3();
+      for (const o of part.meshes) { o.geometry.computeBoundingBox(); box.union(o.geometry.boundingBox.clone().applyMatrix4(o.matrix)); }
+      part.c = box.getCenter(new THREE.Vector3());
+      part.p0 = pn.position.clone();
+      const row = m.bom.find((b) => b.link === ln.name && b.part === part.base && !b._used) ||
+                  m.bom.find((b) => b.link === ln.name && b.part === part.base);
+      if (row) row._used = true;
+      part.bom = row || null;
+      m.parts.push(part);
+    }
+  }
+  applyPose(m);
+  root.updateMatrixWorld(true);
+  const box = new THREE.Box3().setFromObject(root);
+  m.box = box;
+  m.groundY = box.min.y;
+  m.center = box.getCenter(new THREE.Vector3());
+  m.size = box.getSize(new THREE.Vector3());
+  // resolve "reach" targets: feed axes point straight down in the display pose
+  for (const c of [CYCLES[m.robot]]) for (const mv of c.moves) for (const [j, v] of Object.entries(mv[2])) if (v && v.reach) {
+    const b = new THREE.Box3();
+    for (const l of v.reach) if (m.links[l]) b.expandByObject(m.links[l]);
+    mv[2][j] = (b.min.y - m.groundY) / 1000 + v.depth;
+  }
+}
+
+// ---------------------------------------------------------------- kinematics (URDF, millimetres)
+const _m = new THREE.Matrix4(), _e = new THREE.Euler(), _v = new THREE.Vector3();
+function linkMatrix(m, link, memo) {
+  if (memo[link]) return memo[link];
+  const j = m.joints[link];
+  if (!j) return (memo[link] = new THREE.Matrix4());
+  const T = linkMatrix(m, j.parent, memo).clone();
+  T.multiply(new THREE.Matrix4().makeRotationFromEuler(_e.set(j.rpy[0], j.rpy[1], j.rpy[2], "ZYX")).setPosition(j.xyz[0] * 1000, j.xyz[1] * 1000, j.xyz[2] * 1000));
+  const q = m.q[j.name] ?? 0;
+  if (j.type === "revolute" || j.type === "continuous") T.multiply(_m.makeRotationAxis(_v.fromArray(j.axis).normalize(), q));
+  else if (j.type === "prismatic") T.multiply(_m.makeTranslation(j.axis[0] * q * 1000, j.axis[1] * q * 1000, j.axis[2] * q * 1000));
+  return (memo[link] = T);
+}
+function applyPose(m) {
+  const memo = {};
+  for (const [name, node] of Object.entries(m.links)) { node.matrix.copy(linkMatrix(m, name, memo)); node.matrixWorldNeedsUpdate = true; }
+  m.root.updateMatrixWorld(true);
+  applyExplode(m);
+}
+let explodeF = 0;
+function applyExplode(m) {
+  if (!m.center) return;
+  const inv = new THREE.Matrix4();
+  for (const p of m.parts) {
+    if (explodeF === 0) { p.node.position.copy(p.p0); continue; }
+    const ln = m.links[p.link];
+    const cw = p.c.clone().applyMatrix4(ln.matrixWorld);
+    const off = cw.clone().sub(m.center).multiplyScalar(explodeF);
+    inv.copy(ln.matrixWorld).invert();
+    const a = cw.clone().applyMatrix4(inv), b = cw.add(off).applyMatrix4(inv);
+    p.node.position.copy(p.p0).add(b.sub(a));
+  }
+  m.root.updateMatrixWorld(true);
+}
+
+// ---------------------------------------------------------------- cycle playback
+let t = 0, playing = false, lastNow = 0;
+const plug = { obj: null, planted: [] };
+function plugMesh() {
+  const g = new THREE.Group();
+  const soil = new THREE.MeshStandardMaterial({ color: new THREE.Color(.37, .26, .17), roughness: 1 });
+  const leaf = new THREE.MeshStandardMaterial({ color: new THREE.Color(.31, .6, .25), roughness: .8 });
+  const ball = new THREE.Mesh(new THREE.CylinderGeometry(21, 11, 120, 20), soil);
+  ball.rotation.x = Math.PI / 2; ball.position.z = 60;
+  const stem = new THREE.Mesh(new THREE.CylinderGeometry(3.5, 3.5, 210, 8), soil);
+  stem.rotation.x = Math.PI / 2; stem.position.z = 225;
+  const crown = new THREE.Mesh(new THREE.SphereGeometry(48, 18, 12), leaf);
+  crown.scale.set(1, 1, 1.25); crown.position.z = 340;
+  for (const o of [ball, stem, crown]) { o.castShadow = true; g.add(o); }
+  return g;
+}
+function resetPlugs() {
+  if (plug.obj) plug.obj.parent && plug.obj.parent.remove(plug.obj);
+  plug.obj = null;
+  for (const p of plug.planted) p.parent && p.parent.remove(p);
+  plug.planted = [];
+}
+function runEvent(m, ev) {
+  if (ev[1] === "attach") {
+    if (!plug.obj) plug.obj = plugMesh();
+    const ln = m.links[ev[2]];
+    if (!ln) return;
+    ln.add(plug.obj);
+    plug.obj.position.fromArray(ev[3]);
+    plug.obj.rotation.set(0, 0, 0);
+    plug.obj.updateMatrixWorld(true);
+  } else if (ev[1] === "plant" && plug.obj) {
+    m.asm.attach(plug.obj);          // keep its world pose: it stays in the ground
+    plug.planted.push(plug.obj);
+    plug.obj = null;
+  }
+}
+function valueAt(m, joint, tt) {
+  let v = m.pose0[joint] ?? 0;
+  for (const mv of CYCLES[m.robot].moves) {
+    if (!(joint in mv[2])) continue;
+    const [t0, t1] = mv, target = mv[2][joint];
+    if (tt >= t1) { v = target; continue; }
+    if (tt > t0) { const s = (tt - t0) / (t1 - t0), k = s * s * (3 - 2 * s); v = v + (target - v) * k; }
+    break;
+  }
+  return v;
+}
+function setTime(m, tt, scrubbing) {
+  const c = CYCLES[m.robot];
+  const prev = t;
+  t = Math.max(0, Math.min(c.T, tt));
+  const joints = new Set(c.moves.flatMap((mv) => Object.keys(mv[2])));
+  const poseAt = (tt) => { for (const j of joints) m.q[j] = valueAt(m, j, tt); if (m.root) applyPose(m); };
+  if (m.root) {
+    // replay the plug's hand-offs at their own times, so a planted plug lands where the jaws opened
+    if (scrubbing || t < prev) { resetPlugs(); for (const ev of c.events) if (ev[0] <= t) { poseAt(ev[0]); runEvent(m, ev); } }
+    else for (const ev of c.events) if (ev[0] > prev && ev[0] <= t) { poseAt(ev[0]); runEvent(m, ev); }
+  }
+  poseAt(t);
+  let cap = c.captions[0][1];
+  for (const [ct, txt] of c.captions) if (ct <= t) cap = txt;
+  $("step").textContent = cap;
+  $("tc").textContent = `${t.toFixed(1)} / ${c.T.toFixed(0)} s`;
+  $("scrub").value = (100 * t / c.T).toFixed(2);
+  syncSliders();
+}
+function setPlaying(on) {
+  playing = on;
+  $("play").textContent = on ? "❚❚ Pause" : (t > 0 && t < CYCLES[M.robot].T ? "▶ Resume" : "▶ Plant cycle");
+  lastNow = performance.now();
+}
+$("play").addEventListener("click", () => {
+  if (!M) return;
+  if (!playing && t >= CYCLES[M.robot].T - 1e-3) setTime(M, 0, true);
+  setPlaying(!playing);
+});
+$("scrub").addEventListener("input", (e) => { if (!M) return; setPlaying(false); setTime(M, CYCLES[M.robot].T * e.target.value / 100, true); });
+
+// ---------------------------------------------------------------- sliders
+function mechanismJoints(m) {
+  return Object.values(m.joints).filter((j) => j.type !== "fixed" && !/wheel|^[fr][lr]\d_joint$|^(rear|front)_.*_steer|hitch|artic_roll/.test(j.name));
+}
+function buildSliders(m) {
+  const box = $("joints");
+  box.replaceChildren();
+  for (const j of mechanismJoints(m)) {
+    const lin = j.type === "prismatic";
+    let lo = j.lower, hi = j.upper;
+    if (j.type === "continuous" || lo == null || lo === hi) { lo = -Math.PI; hi = Math.PI; }
+    const d = el("div", "ctl");
+    const id = `j-${j.name}`;
+    const lab = el("label", null, human(j.name)); lab.htmlFor = id;
+    const out = el("output");
+    const inp = el("input"); Object.assign(inp, { type: "range", id, min: lo, max: hi, step: lin ? 0.001 : 0.005 });
+    inp.dataset.joint = j.name; inp.dataset.lin = lin ? "1" : "";
+    inp.addEventListener("input", () => {
+      setPlaying(false);
+      m.q[j.name] = parseFloat(inp.value);
+      if (m.root) applyPose(m);
+      fmt(inp, out);
+    });
+    d.append(lab, out, inp);
+    box.append(d);
+  }
+  syncSliders();
+}
+function fmt(inp, out) {
+  const v = parseFloat(inp.value);
+  out.textContent = inp.dataset.lin ? `${(v * 1000).toFixed(0)} mm` : `${(v * 180 / Math.PI).toFixed(1)}°`;
+}
+function syncSliders() {
+  if (!M) return;
+  for (const inp of $("joints").querySelectorAll("input")) {
+    let v = M.q[inp.dataset.joint] ?? 0;
+    if (!inp.dataset.lin && (v > Math.PI || v < -Math.PI) && parseFloat(inp.max) <= Math.PI + 1e-6) v = Math.atan2(Math.sin(v), Math.cos(v));
+    inp.value = v;
+    fmt(inp, inp.previousElementSibling);
+  }
+}
+$("home").addEventListener("click", () => { if (!M) return; setPlaying(false); setTime(M, 0, true); });
+
+// ---------------------------------------------------------------- tree, inspector, selection
+function linkMass(m, link) { return m.bom.filter((b) => b.link === link).reduce((s, b) => s + parseFloat(b.est_mass_kg || 0), 0); }
+function buildTree(m) {
+  const tree = $("tree");
+  tree.replaceChildren();
+  const q = $("filter").value.trim().toLowerCase();
+  const links = m.root ? Object.keys(m.links) : [...new Set(m.bom.map((b) => b.link))];
+  for (const link of links) {
+    const parts = m.root ? m.parts.filter((p) => p.link === link) : m.bom.filter((b) => b.link === link).map((b) => ({ base: b.part, name: b.part, link, bom: b }));
+    const match = (p) => !q || [p.base, link, p.bom?.note || "", p.bom?.material || ""].join(" ").toLowerCase().includes(q);
+    const shown = parts.filter(match);
+    if (q && !shown.length && !link.includes(q)) continue;
+    const wrap = el("div", "link" + (q ? " open" : ""));
+    const row = el("div", "row"); row.tabIndex = 0; row.dataset.link = link;
+    const tw = el("button", "tw", "▸"); tw.type = "button"; tw.setAttribute("aria-label", `Expand ${human(link)}`);
+    tw.addEventListener("click", (e) => { e.stopPropagation(); wrap.classList.toggle("open"); tw.textContent = wrap.classList.contains("open") ? "▾" : "▸"; });
+    if (q) tw.textContent = "▾";
+    const eye = el("button", "eye", "◉"); eye.type = "button"; eye.setAttribute("aria-label", `Hide or show ${human(link)}`);
+    eye.addEventListener("click", (e) => { e.stopPropagation(); const n = m.links[link]; if (!n) return; n.visible = !n.visible; refreshTreeState(); });
+    row.append(tw, el("span", "nm", human(link)), el("span", "kg", `${kg(linkMass(m, link))} kg`), eye);
+    row.addEventListener("click", () => select({ type: "link", key: link }));
+    row.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); select({ type: "link", key: link }); } });
+    const pl = el("div", "parts");
+    for (const p of shown) {
+      const r = el("div", "row"); r.tabIndex = 0; r.dataset.part = `${link}/${p.name}`;
+      const rgb = MAT_RGB[p.bom?.material] || [.5, .5, .5];
+      const nm = el("span", "nm"); const sw = el("i", "sw"); sw.style.background = `rgb(${rgb.map((c) => Math.round(c * 255)).join(",")})`;
+      nm.append(sw, document.createTextNode(human(p.base)));
+      r.append(el("span"), nm, el("span", "kg", p.bom ? `${kg(parseFloat(p.bom.est_mass_kg))} kg` : ""), el("span"));
+      r.addEventListener("click", () => select({ type: "part", key: `${link}/${p.name}` }));
+      r.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); select({ type: "part", key: `${link}/${p.name}` }); } });
+      pl.append(r);
+    }
+    wrap.append(row, pl);
+    tree.append(wrap);
+  }
+  refreshTreeState();
+}
+function refreshTreeState() {
+  for (const r of $("tree").querySelectorAll(".row")) {
+    const link = r.dataset.link, part = r.dataset.part;
+    r.classList.toggle("sel", !!selected && ((selected.type === "link" && link === selected.key) || (selected.type === "part" && part === selected.key)));
+    if (link && M?.links[link]) { r.classList.toggle("hid", !M.links[link].visible); r.querySelector(".eye").textContent = M.links[link].visible ? "◉" : "○"; }
+  }
+}
+$("filter").addEventListener("input", () => M && buildTree(M));
+
+let hiMat = null;
+function highlight(on) {
+  if (!M || !M.root) return;
+  if (!hiMat) hiMat = new THREE.MeshStandardMaterial({ color: new THREE.Color(css("--pick")), emissive: new THREE.Color(css("--pick")), emissiveIntensity: 0.35, side: THREE.DoubleSide, roughness: .5 });
+  hiMat.color.set(css("--pick")); hiMat.emissive.set(css("--pick"));
+  for (const p of M.parts) for (const o of p.meshes) {
+    const isSel = on && selected && ((selected.type === "part" && selected.key === `${p.link}/${p.name}`) || (selected.type === "link" && selected.key === p.link));
+    o.material = isSel ? hiMat : o.userData.orig;
+  }
+  for (const p of M.parts) for (const o of p.meshes) if (o.material === o.userData.orig) {
+    const om = o.userData.orig;
+    if (om.userData.baseOpacity == null) om.userData.baseOpacity = om.opacity;
+    om.opacity = xray ? Math.min(om.userData.baseOpacity, 0.18) : om.userData.baseOpacity;
+    om.transparent = xray || om.userData.baseOpacity < 1;
+    om.depthWrite = !xray;
+  }
+}
+function select(s) {
+  selected = s;
+  highlight(true);
+  refreshTreeState();
+  renderInspector();
+  if (s) { const r = $("tree").querySelector(s.type === "link" ? `[data-link="${CSS.escape(s.key)}"]` : `[data-part="${CSS.escape(s.key)}"]`);
+    if (r) { r.closest(".link")?.classList.add("open"); r.scrollIntoView({ block: "nearest" }); } }
+}
+function renderInspector() {
+  const box = $("insp");
+  box.replaceChildren(el("h2", null, "Selection"));
+  if (!M) return;
+  if (!selected) {
+    box.append(el("div", "sel-name", human(M.robot)), el("div", "muted", R[M.robot].blurb), el("div", "muted", "Click a part in the model or the list."));
+    return;
+  }
+  const dl = el("dl");
+  const add = (k, v) => { dl.append(el("dt", null, k), el("dd", null, v)); };
+  if (selected.type === "link") {
+    const rows = M.bom.filter((b) => b.link === selected.key);
+    const j = M.joints[selected.key];
+    box.append(el("div", "sel-name", human(selected.key)));
+    add("link", selected.key);
+    if (j) { add("joint", `${j.name} (${j.type})`); add("parent", j.parent);
+      if (j.type === "prismatic" || j.type === "revolute") add("travel", j.type === "prismatic" ? `${(j.lower * 1000).toFixed(0)} to ${(j.upper * 1000).toFixed(0)} mm` : `${(j.lower * 180 / Math.PI).toFixed(0)}° to ${(j.upper * 180 / Math.PI).toFixed(0)}°`); }
+    add("parts", String(rows.length));
+    add("est. mass", `${kg(rows.reduce((s, b) => s + parseFloat(b.est_mass_kg || 0), 0))} kg`);
+  } else {
+    const [link, name] = selected.key.split("/");
+    const p = M.parts.find((x) => x.link === link && x.name === name) || { base: name, bom: M.bom.find((b) => b.link === link && b.part === name.replace(/_\d+$/, "")) };
+    const b = p.bom;
+    box.append(el("div", "sel-name", human(p.base)));
+    add("link", link);
+    if (b) {
+      add("material", MAT_NAMES[b.material] || b.material);
+      add("volume", `${parseFloat(b.volume_L).toFixed(2)} L`);
+      add("est. mass", `${kg(parseFloat(b.est_mass_kg))} kg`);
+      if (b.note) add("note", b.note);
+    } else add("BOM", "display-only mesh (no BOM row)");
+    if (p.meshes?.length) {
+      const bb = new THREE.Box3(); for (const o of p.meshes) bb.expandByObject(o);
+      const s = bb.getSize(new THREE.Vector3());
+      add("envelope", `${s.x.toFixed(0)} × ${s.z.toFixed(0)} × ${s.y.toFixed(0)} mm`);
+    }
+  }
+  box.append(dl);
+}
+
+// picking
+const ray = new THREE.Raycaster(), ptr = new THREE.Vector2();
+let down = null;
+cv.addEventListener("pointerdown", (e) => { down = [e.clientX, e.clientY]; });
+cv.addEventListener("pointerup", (e) => {
+  if (!down || !M || !M.root) return;
+  if (Math.hypot(e.clientX - down[0], e.clientY - down[1]) > 4) return;
+  const r = cv.getBoundingClientRect();
+  ptr.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
+  ray.setFromCamera(ptr, camera);
+  const vis = [];
+  for (const p of M.parts) for (const o of p.meshes) if (isShown(o)) vis.push(o);
+  const hits = ray.intersectObjects(vis, false).filter((h) => !renderer.clippingPlanes.length || renderer.clippingPlanes[0].distanceToPoint(h.point) >= 0);
+  if (!hits.length) { select(null); return; }
+  const part = hits[0].object.userData.part;
+  const key = `${part.link}/${part.name}`;
+  select(selected?.type === "part" && selected.key === key ? { type: "link", key: part.link } : { type: "part", key });
+});
+function isShown(o) { for (let n = o; n; n = n.parent) if (!n.visible) return false; return true; }
+
+// ---------------------------------------------------------------- view tools
+$("explode").addEventListener("input", (e) => { explodeF = parseFloat(e.target.value); $("explode-o").textContent = `${Math.round(explodeF * 100)}%`; if (M?.root) applyExplode(M); });
+let cutAxis = "x";
+function applyCut() {
+  if (!renderer || !M?.box) return;
+  const v = parseFloat($("cut").value) / 100;
+  if (v >= 0.999) { renderer.clippingPlanes = []; $("cut-o").textContent = "off"; return; }
+  const b = M.box;
+  // URDF x (length) = world x, URDF y (width) = world -z, URDF z (height) = world y
+  if (cutAxis === "x") { cutPlane.normal.set(-1, 0, 0); cutPlane.constant = b.min.x + v * (b.max.x - b.min.x); }
+  else if (cutAxis === "y") { cutPlane.normal.set(0, 0, 1); cutPlane.constant = -(b.max.z - v * (b.max.z - b.min.z)); }
+  else { cutPlane.normal.set(0, -1, 0); cutPlane.constant = b.min.y + v * (b.max.y - b.min.y); }
+  renderer.clippingPlanes = [cutPlane];
+  $("cut-o").textContent = `${Math.round(v * 100)}%`;
+}
+$("cut").addEventListener("input", applyCut);
+for (const c of $("cutaxis").querySelectorAll(".chip")) c.addEventListener("click", () => {
+  cutAxis = c.dataset.a;
+  for (const o of $("cutaxis").querySelectorAll(".chip")) o.setAttribute("aria-pressed", String(o === c));
+  if (parseFloat($("cut").value) >= 99.9) $("cut").value = 55;
+  applyCut();
+});
+$("isolate").addEventListener("click", () => {
+  if (!M?.root || !selected) return;
+  const link = selected.type === "link" ? selected.key : selected.key.split("/")[0];
+  for (const [n, node] of Object.entries(M.links)) node.visible = n === link;
+  refreshTreeState(); setSub(null);
+});
+$("showall").addEventListener("click", () => { if (!M?.root) return; for (const node of Object.values(M.links)) node.visible = true; refreshTreeState(); setSub(null); });
+$("fit").addEventListener("click", () => fit(true));
+$("xray").addEventListener("click", (e) => { xray = !xray; e.target.setAttribute("aria-pressed", String(xray)); e.target.classList.toggle("primary", xray); highlight(true); });
+function setSub(on) {
+  const chip = $("subs").querySelector(".chip");
+  if (!chip) return;
+  chip.setAttribute("aria-pressed", String(!!on));
+}
+function buildSubs(m) {
+  const box = $("subs"); box.replaceChildren();
+  const [label, links] = R[m.robot].sub;
+  const c = el("button", "chip", `Only ${label.toLowerCase()}`); c.type = "button"; c.setAttribute("aria-pressed", "false");
+  c.addEventListener("click", () => {
+    if (!m.root) return;
+    const on = c.getAttribute("aria-pressed") !== "true";
+    for (const [n, node] of Object.entries(m.links)) node.visible = !on || links.includes(n);
+    setSub(on); refreshTreeState();
+    fit(true, on ? links : null);
+  });
+  box.append(c);
+}
+function fit(animate, links) {
+  if (!M?.root) return;
+  const b = new THREE.Box3();
+  if (links) for (const l of links) { if (M.links[l]) b.expandByObject(M.links[l]); } else b.copy(M.box);
+  const c = b.getCenter(new THREE.Vector3()), s = b.getSize(new THREE.Vector3()).length();
+  const dist = s / (2 * Math.tan(camera.fov * Math.PI / 360)) * 0.95;
+  const dir = new THREE.Vector3(0.95, 0.55, 1.15).normalize();
+  camera.position.copy(c).addScaledVector(dir, dist);
+  controls.target.copy(c);
+  controls.update();
+}
+
+// ---------------------------------------------------------------- switching robots
+let token = 0;
+async function show(robot) {
+  const my = ++token;
+  setPlaying(false);
+  for (const b of $("tabs").querySelectorAll(".tab")) b.setAttribute("aria-selected", String(b.dataset.r === robot));
+  store.set("fs-cad-robot", robot);
+  $("overlay").hidden = false; $("prog").style.width = "0"; $("ovtext").textContent = renderer ? `Loading ${human(robot)}…` : $("ovtext").textContent;
+  let m;
+  try { m = await loadRobot(robot); } catch (e) {
+    if (my === token) { $("ovtext").textContent = `Could not load the ${robot} model files (${e.message}). Serve the cad/ folder over HTTP and open viewer.html.`; }
+    return;
+  }
+  if (my !== token) return;
+  if (M?.root) scene.remove(M.root);
+  resetPlugs();
+  M = m; selected = null; t = 0;
+  if (m.root) {
+    scene.add(m.root);
+    for (const node of Object.values(m.links)) node.visible = true;
+    if (!grid) {
+      grid = new THREE.GridHelper(16000, 16, css("--grid"), css("--grid"));
+      grid.material.transparent = true; grid.material.opacity = 0.7;
+      scene.add(grid);
+      ground = new THREE.Mesh(new THREE.PlaneGeometry(40000, 40000), new THREE.ShadowMaterial({ opacity: 0.18 }));
+      ground.rotation.x = -Math.PI / 2; ground.receiveShadow = true; scene.add(ground);
+      applyTheme();
+    }
+    grid.position.set(m.center.x, m.groundY - 1, m.center.z);
+    ground.position.set(m.center.x, m.groundY - 2, m.center.z);
+    setTime(m, 0, true);
+    fit(false);
+    $("overlay").hidden = true;
+  }
+  const mass = m.bom.reduce((s, b) => s + parseFloat(b.est_mass_kg || 0), 0);
+  const st = $("stats"); st.replaceChildren();
+  const stat = (k, v) => { const d = el("div", null, k); d.prepend(el("b", null, v)); st.append(d); };
+  if (m.size) stat("envelope L × W × H", `${m.size.x.toFixed(0)} × ${m.size.z.toFixed(0)} × ${m.size.y.toFixed(0)} mm`);
+  stat("parts in BOM", String(m.bom.length));
+  stat("est. structural mass", `${mass.toLocaleString("en-IN", { maximumFractionDigits: 0 })} kg`);
+  $("stepname").textContent = `${robot}.step`; $("subname").textContent = R[robot].step;
+  buildSubs(m); buildTree(m); buildSliders(m); renderInspector(); applyCut(); highlight(true);
+  $("play").textContent = "▶ Plant cycle";
+}
+for (const b of $("tabs").querySelectorAll(".tab")) b.addEventListener("click", () => show(b.dataset.r));
+
+// ---------------------------------------------------------------- loop
+function frame(now) {
+  requestAnimationFrame(frame);
+  if (playing && M) {
+    const dt = Math.min(0.1, (now - lastNow) / 1000); lastNow = now;
+    const T = CYCLES[M.robot].T;
+    setTime(M, t + dt, false);
+    if (t >= T) setPlaying(false);
+  }
+  if (renderer) { controls.update(); renderer.render(scene, camera); }
+}
+resize();
+const hash = location.hash.replace("#", "");
+show(R[hash] ? hash : (R[store.get("fs-cad-robot")] ? store.get("fs-cad-robot") : "jaal"));
+requestAnimationFrame(frame);
+</script>

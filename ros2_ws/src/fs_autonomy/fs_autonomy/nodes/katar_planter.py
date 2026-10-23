@@ -101,12 +101,13 @@ class KatarPlanter(Node):
         self.state_pub.publish(String(data=s))
 
     def tip_station(self, sled_q: float):
-        """Station on the planting line of the bit with the sled at sled_q."""
+        """Station on the planting line of the bit with the sled at sled_q (the auger station is
+        0.20 m ahead of the carriage on the turret)."""
         t = lookup(self.tf, "map", f"{self.ns}/trailer_link")
         if t is None:
             return None
         T = transform_to_matrix(t.transform)
-        p = T @ [-0.85 + sled_q, 2.5, 0.0, 1.0]
+        p = T @ [-0.65 + sled_q, 2.5, 0.0, 1.0]
         s, _, self.hint = self.line.project(p[0], p[1], self.hint)
         return s
 

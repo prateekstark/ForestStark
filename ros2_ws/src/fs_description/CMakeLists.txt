@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.16)
 project(fs_description)
 find_package(ament_cmake REQUIRED)
-install(DIRECTORY urdf config DESTINATION share/${PROJECT_NAME})
+install(DIRECTORY urdf config meshes DESTINATION share/${PROJECT_NAME})
 if(BUILD_TESTING)
   find_package(ament_cmake_pytest REQUIRED)
   ament_add_pytest_test(test_models test/test_models.py)
