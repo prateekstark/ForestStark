@@ -549,6 +549,28 @@
    ],
    "lower": 0.0,
    "upper": 1.6
+  },
+  "lidar_link": {
+   "name": "lidar_joint",
+   "parent": "trailer_link",
+   "type": "fixed",
+   "xyz": [
+    -1.5,
+    1.08,
+    -0.2
+   ],
+   "rpy": [
+    0.0,
+    0.0,
+    1.5708
+   ],
+   "axis": [
+    1.0,
+    0.0,
+    0.0
+   ],
+   "lower": null,
+   "upper": null
   }
  },
  "pose": {

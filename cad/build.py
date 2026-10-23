@@ -11,6 +11,9 @@ Outputs
   cad/out/<robot>.glb                the assembly for the web viewer (glTF, y-up, millimetres)
   cad/out/<robot>_bom.csv            parts, materials, volumes and estimated masses
   cad/out/<robot>_joints.json        the URDF joint tree and display pose, for posing the GLB in the viewer
+  ros2_ws/src/fs_description/config/<robot>_inertials.yaml  mass, centre of mass and inertia of every link
+                                     (CAD solids x density x solid fraction, catalogue masses for bought-out
+                                     parts, plus payload), which the simulation uses instead of the xacro guesses
   ros2_ws/src/fs_description/meshes/<robot>/<link>.obj/.mtl   per-link visuals for Gazebo and RViz (metres)
   ros2_ws/src/fs_description/meshes/plug.obj                   the plug that fs::PlugInventory places
 
@@ -28,6 +31,8 @@ from pathlib import Path
 
 import cadquery as cq
 import numpy as np
+from OCP.BRepGProp import BRepGProp
+from OCP.GProp import GProp_GProps
 from OCP.gp import gp_Trsf
 
 ROOT = Path(__file__).resolve().parent
@@ -53,6 +58,41 @@ SUBSYSTEMS = {
                                    "finger_l_link", "finger_r_link", "auger_feed_link", "auger_link"]),
 }
 TOL, ANG = 0.8, 0.3   # tessellation: mm, rad
+CONFIG = WS / "src" / "fs_description" / "config"
+
+# Mass properties. "mass" replaces the CAD estimate for bought-out or air-filled parts (the CAD shape
+# still sets the centre of mass and the shape of the inertia); "payload" adds what the machine carries,
+# as boxes (name, kg, centre xyz m, size xyz m) in the link frame, at a typical half-full load.
+PHYSICS = {
+    "katar": {
+        "mass": {"base_link": 1545.0,                       # 40 hp tractor, 1,895 kg kerb, less its wheels
+                 "rear_left_wheel_link": 130.0, "rear_right_wheel_link": 130.0,   # 13.6-28 tyre + rim
+                 "front_left_wheel_link": 45.0, "front_right_wheel_link": 45.0,   # 6.0-16 tyre + rim
+                 "trailer_fl_wheel_link": 40.0, "trailer_fr_wheel_link": 40.0,
+                 "trailer_rl_wheel_link": 40.0, "trailer_rr_wheel_link": 40.0,
+                 "driver_link": 70.0, "loader_link": 70.0},
+        "payload": {"trailer_link": [("water, 500 L", 500.0, (-1.6, 0.0, 1.15), (1.6, 0.85, 0.85)),
+                                     ("plugs in 24 trays", 300.0, (-3.4, 0.0, 1.0), (2.1, 1.8, 1.1)),
+                                     ("amendments", 300.0, (-0.5, 0.0, 0.95), (0.45, 1.25, 0.5))]},
+    },
+    "jaal": {
+        "mass": {f"wheel_{t}_link": 42.0 for t in ("fl", "fr", "rl", "rr")},  # 760 mm wheel with 3 kW hub motor
+        "payload": {"base_link": [("LFP 30 kWh pack", 185.0, (0.0, 0.0, 0.18), (1.6, 0.9, 0.25)),
+                                  ("water, 125 L", 125.0, (-0.6, 0.0, 0.0), (0.6, 0.9, 0.25)),
+                                  ("amendments", 80.0, (-1.12, 0.0, 0.7), (0.33, 0.75, 0.3)),
+                                  ("computer, drives, harness", 45.0, (0.6, 0.0, 0.3), (0.6, 0.6, 0.2))],
+                    "drum_f_link": [("90 plugs", 22.0, (0.0, 0.0, 0.7), (0.9, 0.9, 1.4))],
+                    "drum_r_link": [("90 plugs", 22.0, (0.0, 0.0, 0.7), (0.9, 0.9, 1.4))]},
+    },
+    "pahadi": {
+        "mass": {f"{m}{s}{i}_link": 18.0 for m in "fr" for s in "lr" for i in (1, 2, 3)},  # rubber-tyred road wheels
+        "payload": {"base_link": [("LFP 20 kWh pack and hydraulic power pack", 260.0, (0.0, 0.0, 0.38), (1.1, 0.6, 0.3)),
+                                  ("active tray", 13.0, (-0.3, 0.0, 0.72), (0.27, 0.53, 0.12))],
+                    "rear_link": [("water, 75 L", 75.0, (-0.85, 0.0, 0.15), (0.9, 0.5, 0.25)),
+                                  ("3 spare trays", 40.0, (-0.56, 0.0, 0.65), (0.3, 0.6, 0.6)),
+                                  ("amendments and seed balls", 40.0, (-1.2, 0.0, 0.55), (0.5, 0.5, 0.3))]},
+    },
+}
 
 
 # ------------------------------------------------------------------ URDF kinematics
@@ -173,6 +213,74 @@ def write_joints(robot, joints=None):
     (OUT / f"{robot}_joints.json").write_text(json.dumps({"joints": joints, "pose": POSES[robot]}, indent=1))
 
 
+def mass_properties(parts):
+    """Mass (kg), centre of mass (m) and inertia about it (kg m^2) of a link's parts, in the link frame."""
+    M, S, Io = 0.0, np.zeros(3), np.zeros((3, 3))
+    for p in parts:
+        if p.lod == "mesh":
+            continue
+        g = GProp_GProps()
+        BRepGProp.VolumeProperties_s(common.solid(p.shape).wrapped, g)
+        rho = common.DENSITY.get(p.material, 1000) * p.hollow
+        m = g.Mass() * 1e-9 * rho
+        if m <= 0:
+            continue
+        c = np.array([g.CentreOfMass().X(), g.CentreOfMass().Y(), g.CentreOfMass().Z()]) / 1000.0
+        J = g.MatrixOfInertia()
+        Ic = np.array([[J.Value(i, j) for j in (1, 2, 3)] for i in (1, 2, 3)]) * 1e-15 * rho
+        Io += Ic + m * (c @ c * np.eye(3) - np.outer(c, c))
+        S += m * c
+        M += m
+    if M <= 0:
+        return None
+    com = S / M
+    return M, com, Io - M * (com @ com * np.eye(3) - np.outer(com, com))
+
+
+def add_box(props, kg, c, size):
+    M, com, I = props
+    c = np.asarray(c, float)
+    sx, sy, sz = size
+    Ib = kg / 12.0 * np.diag([sy * sy + sz * sz, sx * sx + sz * sz, sx * sx + sy * sy])
+    Mn = M + kg
+    cn = (M * com + kg * c) / Mn
+    shift = lambda m, a: m * ((a - cn) @ (a - cn) * np.eye(3) - np.outer(a - cn, a - cn))
+    return Mn, cn, I + shift(M, com) + Ib + shift(kg, c)
+
+
+def write_inertials(robot, R):
+    """Per-link inertials for the simulation, from the CAD with catalogue masses and payload."""
+    cfg = PHYSICS[robot]
+    out, report = {}, []
+    for link, parts in R.links.items():
+        props = mass_properties(parts)
+        if props is None:
+            continue
+        cad_m = props[0]
+        if link in cfg["mass"]:
+            k = cfg["mass"][link] / props[0]
+            props = (props[0] * k, props[1], props[2] * k)
+        for name, kg, c, size in cfg["payload"].get(link, []):
+            props = add_box(props, kg, c, size)
+        M, com, I = props
+        I = (I + I.T) / 2
+        w = np.linalg.eigvalsh(I)
+        if w.min() <= 0:                                    # a flat or degenerate shape: give it some thickness
+            I += np.eye(3) * max(1e-6, w.max() * 1e-3)
+        out[link] = {"mass": round(float(M), 3), "com": [round(float(v), 4) for v in com],
+                     "ixx": float(I[0, 0]), "iyy": float(I[1, 1]), "izz": float(I[2, 2]),
+                     "ixy": float(I[0, 1]), "ixz": float(I[0, 2]), "iyz": float(I[1, 2]), "cad_kg": round(float(cad_m), 2)}
+        report.append((link, cad_m, M))
+    CONFIG.mkdir(parents=True, exist_ok=True)
+    import yaml
+    (CONFIG / f"{robot}_inertials.yaml").write_text(
+        f"# Generated by cad/build.py from the CAD solids (density x solid fraction), catalogue masses and payload.\n"
+        + yaml.safe_dump(out, sort_keys=True))
+    total = sum(v["mass"] for v in out.values())
+    print(f"  inertials: {len(out)} links, {total:,.0f} kg in running order -> {CONFIG / f'{robot}_inertials.yaml'}")
+    return out
+
+
 def build(robot):
     t0 = time.time()
     R = ROBOTS[robot].build()
@@ -183,6 +291,7 @@ def build(robot):
         tris += write_obj(MESHES / robot / f"{link}.obj", parts)
     print(f"  meshes: {tris:,} triangles -> {MESHES / robot}")
 
+    write_inertials(robot, R)
     joints = urdf_tree(robot)
     write_joints(robot, joints)
     T = link_poses(joints, POSES[robot])
@@ -225,6 +334,10 @@ if __name__ == "__main__":
     if "--joints" in args:
         for r in ROBOTS:
             write_joints(r)
+        sys.exit(0)
+    if "--inertials" in args:
+        for r in ROBOTS:
+            write_inertials(r, ROBOTS[r].build())
         sys.exit(0)
     plug_mesh()
     for r in (args or list(ROBOTS)):

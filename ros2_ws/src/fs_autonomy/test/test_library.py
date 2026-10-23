@@ -55,6 +55,17 @@ def test_drawbar_and_slip():
     assert 15 < g < 35
 
 
+
+def test_moisture_hole_wall_and_ruts_match_cpp():
+    clay = dict(name="heavy_clay", n=0.13, kc=12.70, kphi=1555.95, c=68.95, phi=34.0, K=0.01)
+    f = tm.strength_factor(clay, 0.40)
+    assert tm.sinkage(tm.at_moisture(clay, 0.40), 5000, 0.3, 0.3) / tm.sinkage(clay, 5000, 0.3, 0.3) == \
+        pytest.approx(f ** -1.5, rel=1e-6)
+    sand = dict(SAND, name="dry_sand")
+    assert tm.hole_collapse(sand, 0.03, 0.5) > 0.15 and tm.hole_collapse(sand, 0.11, 0.5) == 0.0
+    z = tm.sinkage(LOAM, 4000, 0.22, 0.25)
+    assert tm.multipass_resistance(LOAM, z, z, 0.22) == pytest.approx(0.15 * tm.compaction_resistance(LOAM, z, 0.22))
+
 # ------------------------------------------------------------------ stability
 def test_force_angle_flat_and_tilted():
     contacts = np.array([[0.65, 0.64, 0], [0.65, -0.64, 0], [-0.65, 0.64, 0], [-0.65, -0.64, 0]])

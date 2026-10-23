@@ -141,3 +141,53 @@ TEST(SoilMap, LoadsAndInterpolates)
   EXPECT_LT(n.x, 0.0);   // ground rises with x, normal leans back
   EXPECT_NEAR(m.Sample(1.5, 1).rockDepth, 0.3, 1e-9);
 }
+
+TEST(Moisture, WetClayLosesTractionDampSandGainsSome)
+{
+  const auto clay = Soil("heavy_clay"), sand = Soil("dry_sand");
+  const auto wet = AtMoisture(clay, 0.40), ref = AtMoisture(clay, clay.refMoisture);
+  EXPECT_NEAR(ref.c, clay.c, 1e-9);
+  EXPECT_LT(ShearCapacity(wet, 5000, 0.3, 0.3), 0.6 * ShearCapacity(ref, 5000, 0.3, 0.3));
+  // sinkage grows as f^-1.5 whatever n, so a vertisol's tiny exponent cannot blow it up
+  const double f = StrengthFactor(clay, 0.40);
+  EXPECT_NEAR(Sinkage(wet, 5000, 0.3, 0.3) / Sinkage(ref, 5000, 0.3, 0.3), std::pow(f, -1.5), 1e-6);
+  EXPECT_GT(AtMoisture(sand, 0.10).c, AtMoisture(sand, 0.01).c + 2.0);
+  EXPECT_GT(AtMoisture(Soil("sandy_loam"), 0.05).c, Soil("sandy_loam").c);   // hard-set when dry
+}
+
+TEST(Moisture, MapsWithoutMoistureColumnsGetTheTableValues)
+{
+  SoilParams s; s.name = "heavy_clay"; s.wetSoftening = 0;
+  FillMoisture(s);
+  EXPECT_DOUBLE_EQ(s.wetSoftening, Soil("heavy_clay").wetSoftening);
+}
+
+TEST(HoleWall, BoneDrySandCavesWetSandStands)
+{
+  const auto sand = Soil("dry_sand");
+  EXPECT_GT(HoleCollapse(sand, 0.03, 0.5), 0.15);             // no cohesion at all: half the pit fills
+  EXPECT_EQ(HoleCollapse(sand, 0.11, 0.5), 0.0);              // after pre-watering
+  EXPECT_EQ(HoleCollapse(Soil("sandy_loam"), 0.13, 0.55), 0.0);
+  EXPECT_EQ(HoleCollapse(Soil("clayey_soil"), 0.19, 1.2), 0.0);   // CSSRI auger holes stand in sodic clay
+  EXPECT_GT(HoleCollapse(Soil("clayey_soil"), 0.35, 1.2), 0.0);   // but not when waterlogged
+}
+
+TEST(Ruts, SecondPassOnlyPaysForExtraCompaction)
+{
+  const auto s = Soil("sandy_loam");
+  const double z = Sinkage(s, 4000, 0.22, 0.25);
+  const double first = MultiPassResistance(s, z, 0.0, 0.22);
+  EXPECT_DOUBLE_EQ(first, CompactionResistance(s, z, 0.22));
+  EXPECT_NEAR(MultiPassResistance(s, z, z, 0.22), 0.15 * first, 1e-9);
+  const double deeper = MultiPassResistance(s, 1.5 * z, z, 0.22);
+  EXPECT_GT(deeper, 0.15 * CompactionResistance(s, 1.5 * z, 0.22));
+  EXPECT_LT(deeper, CompactionResistance(s, 1.5 * z, 0.22));
+
+  RutMap m(0.1);
+  m.Press(1.0, 2.0, 0.03, 0.3, 0.0, 1.0);      // tread across y
+  EXPECT_FLOAT_EQ(m.Depth(1.0, 2.12), 0.03f);
+  EXPECT_EQ(m.Depth(1.0, 2.4), 0.0);
+  EXPECT_EQ(m.Depth(1.2, 2.0), 0.0);           // nothing ahead of or behind the line
+  m.Press(1.0, 2.0, 0.01, 0.3);
+  EXPECT_FLOAT_EQ(m.Depth(1.0, 2.0), 0.03f);   // keeps the deepest
+}

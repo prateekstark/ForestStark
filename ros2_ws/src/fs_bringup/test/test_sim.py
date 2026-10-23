@@ -42,3 +42,18 @@ def test_every_robot_runs_the_safety_monitor():
     for kind in sim.JOINT_CMDS:
         nodes = sim.robot_core(kind, kind, Path("/tmp/x.yaml"), "w", {})
         assert any(getattr(n, "_Node__node_executable", None) == "safety_monitor" for n in nodes)
+
+
+@pytest.mark.parametrize("kind", sorted(sim.JOINT_CMDS))
+def test_hardware_contract_covers_every_command_with_limits(kind):
+    from fs_bringup import interface_contract as ic
+    text = ic.contract(kind)
+    for j in sim.JOINT_CMDS[kind]:
+        assert f"| `{j}` | ?" not in text, j          # every commanded joint has URDF limits for the driver
+    assert "`gnss/fix_raw`" in text and "`cmd_vel`" in text and "ground_truth" not in text
+
+
+def test_robot_config_feeds_both_sim_and_hardware():
+    assert sim.head_params("katar")["plugs"] == 1200
+    assert sim.head_params("jaal", plugs=18)["plugs"] == 18
+    assert sim.robot_config("jaal", "navigator")["mass_kg"] > 1500     # running order from the CAD

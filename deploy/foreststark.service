@@ -1,0 +1,18 @@
+# systemd unit for the robot's on-board computer: starts the autonomy stack at boot and restarts it.
+#   sudo cp deploy/foreststark.service /etc/systemd/system/ && sudo systemctl enable --now foreststark
+# Settings (ROBOT, NS, SITE, SITE_DIR, FLEET...) go in /opt/foreststark/docker/.env.
+[Unit]
+Description=ForestStark planting robot autonomy
+After=network-online.target docker.service
+Wants=network-online.target
+Requires=docker.service
+
+[Service]
+WorkingDirectory=/opt/foreststark/docker
+ExecStart=/usr/bin/docker compose up robot
+ExecStop=/usr/bin/docker compose stop robot
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

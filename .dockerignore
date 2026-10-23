@@ -1,0 +1,4 @@
+**
+!ros2_ws/src/**
+!docker/entrypoint.sh
+**/__pycache__

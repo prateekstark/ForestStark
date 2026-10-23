@@ -8,7 +8,7 @@ Arguments
   region        eastern_plain (Jaipur) | ignp_canal (Sri Ganganagar: sodic, waterlogged) | hadoti_vertisol (Kota)
   mode          stop_and_go | on_the_move
   spacing       m between plants (the region's: 5 m avenue, 4 m on IGNP canal banks)
-  deep_auger    auto (on for ignp_canal) | true | false: 2.0 m auger feed for 1.2 m auger holes
+  deep_auger    auto (on for ignp_canal) | true | false: 1.45 m auger on a 1.5 m feed for 1.2 m auger holes
   speed_kmh     driver's set speed (2.5)
   weave_m       driver's lateral weave, 1 sigma (0.25)
   reaction_s    driver reaction to the cab STOP cue (0.8)
@@ -40,11 +40,10 @@ def setup(context):
     site_file = site_dir / "roadside.yaml"
     ns = "katar"
     common = {"site_file": str(site_file), "robot": ns, "use_sim_time": True}
-    head = {"plugs": 1200, "water_l": 1000.0, "water_dose_l": 1.0, "pump_lps": 0.5, "hole_depth": 0.30, "deep_auger": deep,
-            "rail_min": float(c["rail_min"]), "rail_max": float(c["rail_max"])}
+    head = sim.head_params("katar", deep_auger=deep, rail_min=float(c["rail_min"]), rail_max=float(c["rail_max"]))
     actions = sim.gazebo(site_dir / "roadside.sdf", sim.on(c["headless"]), float(c["rtf"]))
     actions += sim.spawn_robot("katar", ns, site_dir, site, lidar=False, inspect=sim.on(c["inspect"]),
-                               xacro_args={"auger_stroke": "2.0" if deep else "1.3"})
+                               xacro_args={"deep_auger": "true" if deep else "false"})
     actions.append(sim.bridge(site["name"], sim.bridge_entries("katar", ns, lidar=False), site_dir))
     actions += sim.robot_core("katar", ns, site_file, site["name"], head, gnss_mode=c["gnss"], seed=seed)
     actions += sim.people(site["name"], ns, site_file, "tool,stand:2.5" if c["people"] == "all" else c["people"])

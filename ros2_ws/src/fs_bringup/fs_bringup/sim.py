@@ -31,11 +31,23 @@ JOINT_CMDS = {"katar": ["sled_joint", "carriage_joint", "turret_joint", "carouse
 SCANS = {"jaal": ["scan", "scan_rear"], "katar": ["scan"], "pahadi": ["scan"]}   # planar lidars per robot
 LIDAR_ALWAYS = {"katar"}                       # Katar's boom-side lidar is part of its safety system
 BASE_HEIGHT = {"katar": 0.72, "jaal": 0.38, "pahadi": 0.21}
+PAHADI_CONTACTS = [f"{m}{s}{i}_link" for m in "fr" for s in "lr" for i in (1, 2, 3)]   # road wheels
 GNSS_LEVER = {"katar": [0.1, 0.0, 2.0], "jaal": [1.15, 0.0, 2.95], "pahadi": [-0.45, -0.26, 1.27]}  # base_link -> antenna
 
 
 def on(v) -> bool:
     return str(v).lower() in ("1", "true", "yes", "on")
+
+
+def robot_config(kind: str, section: str) -> dict:
+    """A section of config/robots.yaml (the as-built numbers shared by simulation and hardware)."""
+    cfg = yaml.safe_load((Path(get_package_share_directory("fs_bringup")) / "config" / "robots.yaml").read_text())
+    return dict(cfg[kind].get(section, {}))
+
+
+def head_params(kind: str, **overrides) -> dict:
+    """Planting-head parameters from config/robots.yaml, with launch-time overrides."""
+    return {**robot_config(kind, "head"), **overrides}
 
 
 def region_setup(kind: str, site: str, c: dict) -> tuple:
@@ -95,6 +107,29 @@ def _stop_gazebo(context, *args, **kwargs):
     return []
 
 
+def apply_inertials(urdf_xml: str, kind: str) -> str:
+    """Replace each link's inertial with the one computed from the CAD (fs_description/config/<kind>_inertials.yaml,
+    written by cad/build.py): mass, centre of mass and full inertia tensor, with payload."""
+    import xml.etree.ElementTree as ET
+    path = Path(get_package_share_directory("fs_description")) / "config" / f"{kind}_inertials.yaml"
+    if not path.exists():
+        return urdf_xml
+    data = yaml.safe_load(path.read_text()) or {}
+    root = ET.fromstring(urdf_xml)
+    for link in root.iter("link"):
+        d = data.get(link.get("name"))
+        if d is None:
+            continue
+        old = link.find("inertial")
+        if old is not None:
+            link.remove(old)
+        inertial = ET.SubElement(link, "inertial")
+        ET.SubElement(inertial, "origin", xyz=" ".join(f"{v:.4f}" for v in d["com"]), rpy="0 0 0")
+        ET.SubElement(inertial, "mass", value=f"{d['mass']:.3f}")
+        ET.SubElement(inertial, "inertia", **{k: f"{d[k]:.6g}" for k in ("ixx", "ixy", "ixz", "iyy", "iyz", "izz")})
+    return ET.tostring(root, encoding="unicode")
+
+
 def robot_description(kind: str, ns: str, soil_map: Path, lidar: bool, gnss_sigma: float = 0.02,
                       inspect: bool = False, xacro_args: dict | None = None) -> str:
     """URDF from xacro. inspect adds a fixed camera beside the plant handling that saves frames to
@@ -105,7 +140,7 @@ def robot_description(kind: str, ns: str, soil_map: Path, lidar: bool, gnss_sigm
                                                   "gnss_sigma": str(gnss_sigma),
                                                   "inspect_cam": "true" if inspect else "false",
                                                   **(xacro_args or {})})
-    return doc.toxml()
+    return apply_inertials(doc.toxml(), kind)
 
 
 def spawn_robot(kind: str, ns: str, site_dir: Path, site: dict, lidar: bool, inspect: bool = False,
@@ -160,10 +195,11 @@ def bridge(world: str, entries: list, out_dir: Path):
 
 
 def robot_core(kind: str, ns: str, site_file: Path, world: str, head: dict, gnss_mode: str = "rtk",
-               dropouts: float = 0.0, seed: int = 1, lidar: bool = True, peers=()):
+               dropouts: float = 0.0, seed: int = 1, lidar: bool = True, peers=(), sim_time: bool = True):
     """Nodes every robot runs: GNSS model, localization, planting head, traction monitor, and the
-    safety monitor that gates cmd_vel_nav -> cmd_vel."""
-    common = {"site_file": str(site_file), "robot": ns, "use_sim_time": True}
+    safety monitor that gates cmd_vel_nav -> cmd_vel. On hardware (sim_time False, gnss_mode
+    "receiver") the same nodes run against the drivers that serve the hardware interface."""
+    common = {"site_file": str(site_file), "robot": ns, "use_sim_time": sim_time}
     scans = SCANS[kind] if (lidar or kind in LIDAR_ALWAYS) else [""]
     return [
         # restarted if it ever dies; until it is back nothing reaches the wheels (the drive's
@@ -192,17 +228,17 @@ def people(world: str, robot: str, site_file: Path, events: str):
                               "use_sim_time": True}])]
 
 
-def common_nodes(site_file: Path, rviz: bool, rviz_config: str, log_dir: str = ""):
+def common_nodes(site_file: Path, rviz: bool, rviz_config: str, log_dir: str = "", sim_time: bool = True):
     nodes = [
         Node(package="fs_autonomy", executable="mission_logger", output="screen",
-             parameters=[{"site_file": str(site_file), "out_dir": log_dir, "use_sim_time": True}]),
+             parameters=[{"site_file": str(site_file), "out_dir": log_dir, "use_sim_time": sim_time}]),
         Node(package="fs_autonomy", executable="viz_markers", output="log",
-             parameters=[{"site_file": str(site_file), "use_sim_time": True}]),
+             parameters=[{"site_file": str(site_file), "use_sim_time": sim_time}]),
     ]
     if rviz:
         nodes.append(Node(package="rviz2", executable="rviz2", output="log",
                           arguments=["-d", os.path.join(get_package_share_directory("fs_bringup"), "rviz", rviz_config)],
-                          parameters=[{"use_sim_time": True}]))
+                          parameters=[{"use_sim_time": sim_time}]))
     return nodes
 
 

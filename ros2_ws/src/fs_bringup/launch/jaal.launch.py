@@ -53,14 +53,14 @@ def setup(context):
     for i, ns in enumerate(robots):
         actions += sim.spawn_robot("jaal", ns, site_dir, site, lidar, inspect=sim.on(c["inspect"]))
         entries += sim.bridge_entries("jaal", ns, lidar)
-        head = {"plugs": plugs, "water_l": 250.0, "water_dose_l": 0.5, "pump_lps": 0.4, "hole_depth": 0.25}
+        head = sim.head_params("jaal", plugs=plugs)
         actions += sim.robot_core("jaal", ns, site_file, world, head, dropouts=float(c["dropouts"]), seed=seed + i,
                                   lidar=lidar, peers=robots)
         actions.append(Node(package="fs_autonomy", executable="jaal_navigator", namespace=ns, output="screen",
                             parameters=[{"site_file": str(site_file), "robot": ns, "robots": robots,
                                          "field": c["field"], "use_lidar": lidar, "rtk_policy": c["rtk_policy"],
                                          "plugs_capacity": plugs, "cruise_speed": float(c["cruise"]), "bays": int(c["bays"]),
-                                         "use_sim_time": True}]))
+                                         **sim.robot_config("jaal", "navigator"), "use_sim_time": True}]))
     actions.append(sim.bridge(world, entries, site_dir))
     actions += [
         Node(package="fs_autonomy", executable="jaal_fleet_manager", output="screen",

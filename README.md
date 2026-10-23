@@ -32,7 +32,10 @@ Tests (C++ soil core, Python library, robot models):
 ```bash
 colcon test --packages-select fs_gazebo fs_description && colcon test-result --verbose
 PYTHONPATH=src/fs_autonomy:src/fs_gazebo python3 -m pytest -q src/fs_autonomy/test
+python3 -m pytest -q src/fs_bringup/test        # launch helpers, hardware contract, physics audit
 ```
+
+Or in a container, with nothing installed but Docker: `docker build -f docker/Dockerfile --target test .`
 
 ## 2. Run
 
@@ -155,8 +158,46 @@ cad/.venv/bin/python cad/build.py pahadi       # one robot
 | `cad/out/<robot>_bom.csv` | Parts, materials, volumes and estimated masses (volume × density × solid fraction) |
 | `cad/out/<robot>.glb`, `<robot>_joints.json` | Assembly and joint tree for the viewer |
 | `ros2_ws/src/fs_description/meshes/<robot>/<link>.obj` | Per-link visuals used by Gazebo and RViz (metres); trays use light proxies in the meshes and full cells in the STEP |
+| `ros2_ws/src/fs_description/config/<robot>_inertials.yaml` | Mass, centre of mass and inertia tensor of every link, integrated from the solids; the launch files put them into the URDF Gazebo loads |
 
-Estimated structural masses: Katar 4,155 kg (tractor and trailer), Jaal 1,498 kg, Pahadi 1,405 kg.
+Estimated structural masses: Katar 4,369 kg (tractor and trailer), Jaal 1,547 kg, Pahadi 1,423 kg. In
+running order, with wheels, batteries, water, plugs and amendments from the catalogue table in
+`cad/build.py`, they are 5,212 kg, 2,015 kg and 1,555 kg.
+
+Every feed in the plant handling rides on something you can see. The auger, duckbill and tamp ring
+run on box-section masts with a carriage, slot and drive rod, so nothing hangs in mid-air while it
+travels. Katar's IGNP kit is a 1.45 m auger on a 1.5 m feed (`deep_auger:=true`). Each robot carries
+a 3-bin amendment hopper (FYM, gypsum, sand) with a screw feeder, and Katar also has a hydrogel doser.
+
+## 2e. Physics audit
+
+```bash
+ros2 run fs_bringup physics_audit --out ../docs/physics_audit.md
+```
+
+The audit loads the URDF Gazebo loads and checks it against what the field needs:
+- inertia tensors (positive-definite, triangle inequality);
+- running-order mass and CoM, and static contact loads (Katar as an articulated tractor-trailer);
+- tip angles from the support polygon against the working side slope, with a 10° margin;
+- Bekker sinkage of the most loaded contact in each soil;
+- gradeability from both drive torque and soil traction, at reference moisture and after monsoon rain;
+- auger thrust against the rig's weight, and Pahadi's arm torques at full reach.
+
+[docs/physics_audit.md](docs/physics_audit.md) has the current results; CI fails if any check
+FAILs. The WARNs are operating limits, not design faults:
+- Katar keeps to verges no steeper than 6° in clayey soil, and to 5° when it is wet.
+- Jaal sinks 6 cm in loose dry sand.
+
+## 2f. Deploying on a machine
+
+`ros2 launch fs_bringup robot.launch.py robot:=<katar|jaal|pahadi> site_file:=<surveyed site>` runs
+the same autonomy nodes without Gazebo. The drivers serve the topics in
+[docs/hardware_interface.md](docs/hardware_interface.md), which is generated from the simulation
+bridge and the URDF. The rest is in [docs/deployment.md](docs/deployment.md):
+- a Docker image with robot, sim and test targets, plus a compose file;
+- a systemd unit to start the stack at boot;
+- `config/robots.yaml`, the as-built numbers shared by simulation and hardware;
+- a commissioning checklist.
 
 The viewer (`cad/viewer.html`) shows the part tree with BOM masses. It can isolate parts, explode the assembly, cut a section plane, pose every mechanism joint and animate one full plant cycle per robot, with the plug moving from the store into the ground. Serve `cad/` and open it:
 
@@ -232,6 +273,20 @@ Gazebo's rigid-body friction cannot represent soil, so the wheel and track colli
 - **Normal load:** quasi-static least-norm distribution of the whole model's weight over the contacts touching the ground. On a slope this gives load transfer to the downhill side.
 - **Sinkage and motion resistance (Bekker):** `z = (p / (kc/b + kφ))^(1/n)` and `Rc = b(kc/b + kφ) z^(n+1)/(n+1)`.
 - **Traction (Janosi–Hanamoto):** `F = (A c + W tanφ)[1 − K/(i l)(1 − e^(−il/K))]`, longitudinal from slip and lateral from side-slip. A LuGre-type bristle state lets a stopped machine hold on a slope instead of creeping.
+- **Moisture:** the constants hold at each soil's reference moisture. Wetter soil softens by
+  `f = e^(−s(θ−θref))`. Drier soil hard-sets, by up to 1.4×. Damp sand gains up to 3 kPa of capillary cohesion.
+  The moduli scale by `f^(1.5n)`, so sinkage grows as `f^−1.5` whatever the exponent. After monsoon rain, a
+  black cotton vertisol keeps about two thirds of its shear strength.
+- **Multi-pass:** a rut map shared by every robot on the site remembers how deep each patch of
+  ground was pressed. Re-loading it to that depth is nearly elastic, so a wheel in an earlier rut
+  pays only for the extra compaction, plus 15 % for rebound. That covers a trailer behind its tractor
+  and a second Jaal on the first one's track.
+- **Hole walls:** when the auger comes out, the wall stands up to its critical height,
+  `4c/γ·tan(45+φ/2)` on the true cohesion. The height is ×2 for arching round a small hole and ÷1.5 for the
+  flight's disturbance. A 50 cm pit in bone-dry Thar sand (θ = 0.03) fills half-way. At θ = 0.04 it
+  fills a quarter, and from 0.055 the wall stands. The
+  planting head then pours the pre-water into the pit (`wet` on `auger/cmd`) and re-bores. With the
+  capillary cohesion the water gives, the wall stands, which is the physical reason behind CAZRI's pre-watering.
 - **Auger cutting (`fs::AugerSoil`):** specific energy `e = e_b · (1.6 − 2.4·moisture)` and feed `min(f_max, η P / (e A))`, slowed when the thrust `0.012 e A` exceeds what the head can push. The reaction goes into the robot through the joints. Refusal at the soil map's depth to rock; percussive-pick mode through rock. A kankar (calcic) pan from the soil map's `hardpan` layer is cut at 3.5 times the soil's energy, so the feed drops sharply in the pan.
 
 Soil constants (Wong, *Theory of Ground Vehicles*) and boring energies:
@@ -243,6 +298,17 @@ Soil constants (Wong, *Theory of Ground Vehicles*) and boring energies:
 | Clayey soil | 0.50 | 13.2 | 692 | 4.14 | 13 | 0.020 | 9 |
 | Heavy clay | 0.13 | 12.7 | 1556 | 68.9 | 34 | 0.010 | 14 |
 | Lateritic gravel | 0.80 | 30 | 4000 | 10 | 35 | 0.015 | 22 |
+
+Moisture parameters (engineering estimates set to reproduce the qualitative field behaviour, not
+measured values; calibrate with a shear vane on site):
+
+| Soil | θref | softening s | capillary c kPa | true share of c |
+|---|---|---|---|---|
+| Dry sand | 0.05 | 0 | 3.0 | 0 (Bekker's c for sand is a fitted intercept) |
+| Sandy loam | 0.15 | 4 | 0.5 | 0.6 |
+| Clayey soil | 0.20 | 6 | 0 | 1 |
+| Heavy clay | 0.25 | 8 | 0 | 1 |
+| Lateritic gravel | 0.10 | 2 | 0 | 0.5 |
 
 ## 5. What the simulations found
 
@@ -275,7 +341,7 @@ Design points that came out of building and running it:
 
 ## 6. Limitations
 
-- Terramechanics is applied per contact with a quasi-static load split. There is no bulldozing, multi-pass compaction or rut geometry, and tracks are modelled as three road-wheel segments per side.
+- Terramechanics is applied per contact with a quasi-static load split. Multi-pass compaction is remembered, but ruts do not change the terrain's geometry, there is no bulldozing, and tracks are modelled as three road-wheel segments per side. Moisture is fixed per site: rain, infiltration and drying are not simulated (the `wet` command raises it only round a pit).
 - Stones are visual only in Gazebo; the soil map tells the auger where rock is.
 - Of the regional steps, the auger bores, depths, water and plug handling are simulated; the saucer basin, mound and mulch are timed steps that leave a model behind, and amendments are counted in hoppers but do not change the soil. Survival is not modelled, so the prescriptions are judged by their sources, not by the simulation. Pahadi plants at 1.25 m from its path, the most its gripper can reach down into a hole on the downhill side, so the Aravalli contour trench (0.45 m uphill of the plant) comes about 6 cm under the edge of its track; a field machine would need a longer arm or would dig the trench from the next row.
 - Plugs are visuals that the inventory moves between links. They are not dynamic bodies, so a dropped or crushed plug cannot be simulated. A plug is planted by spawning a sapling model at the hole.

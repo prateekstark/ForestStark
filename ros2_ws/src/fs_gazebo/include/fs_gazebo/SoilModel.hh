@@ -10,6 +10,10 @@
 //  * LuGre-style bristle state so a wheel or track can stand still on a slope without creeping
 //  * Quasi-static normal-load distribution over the ground contacts (least-norm, non-negative)
 //  * Auger cutting: specific boring energy -> power- and thrust-limited feed rate
+//  * Moisture: wet soil loses strength above the moisture its constants were measured at (clay
+//    most), drier soil hard-sets, damp sand gains capillary cohesion
+//  * Multi-pass: re-loading ground to the depth an earlier pass pressed it to is nearly elastic
+//  * Hole walls: Rankine critical height of an unsupported cut; deeper walls slough into the pit
 //
 // Units are SI throughout. Bekker constants are stored as published (kN based) and converted here.
 #pragma once
@@ -17,7 +21,9 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <cstdint>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 namespace fs::soil
@@ -51,6 +57,10 @@ struct SoilParams
   double phiDeg{20.0};    ///< internal friction angle, deg
   double K{0.025};        ///< shear deformation modulus, m
   double eb{4.0};         ///< specific boring energy at 15 % moisture, MJ/m^3
+  double refMoisture{0.15};  ///< volumetric moisture the constants above were measured at
+  double wetSoftening{4.0};  ///< exponential strength loss per unit of moisture above refMoisture
+  double capillaryC{0.0};    ///< kPa of apparent cohesion damp sand gets from capillary suction
+  double trueCohesion{1.0};  ///< share of c that is real cohesion (Bekker's c for sand is a fitted intercept)
 
   /// Pressure-sinkage modulus for a contact of width b, in Pa/m^n.
   double Modulus(double b) const { return (kc / std::max(b, 1e-3) + kphi) * 1e3; }
@@ -61,11 +71,11 @@ struct SoilParams
 inline std::vector<SoilParams> DefaultSoils()
 {
   return {
-    {"dry_sand",        1.10,  0.99, 1528.43,  1.04, 28.0, 0.025,  2.5},
-    {"sandy_loam",      0.90, 52.53, 1127.97,  4.83, 20.0, 0.025,  4.0},
-    {"clayey_soil",     0.50, 13.19,  692.15,  4.14, 13.0, 0.020,  9.0},
-    {"heavy_clay",      0.13, 12.70, 1555.95, 68.95, 34.0, 0.010, 14.0},
-    {"lateritic_gravel", 0.80, 30.00, 4000.00, 10.00, 35.0, 0.015, 22.0},
+    {"dry_sand",        1.10,  0.99, 1528.43,  1.04, 28.0, 0.025,  2.5, 0.05, 0.0, 3.0, 0.0},
+    {"sandy_loam",      0.90, 52.53, 1127.97,  4.83, 20.0, 0.025,  4.0, 0.15, 4.0, 0.5, 0.6},
+    {"clayey_soil",     0.50, 13.19,  692.15,  4.14, 13.0, 0.020,  9.0, 0.20, 6.0, 0.0, 1.0},
+    {"heavy_clay",      0.13, 12.70, 1555.95, 68.95, 34.0, 0.010, 14.0, 0.25, 8.0, 0.0, 1.0},
+    {"lateritic_gravel", 0.80, 30.00, 4000.00, 10.00, 35.0, 0.015, 22.0, 0.10, 2.0, 0.0, 0.5},
   };
 }
 
@@ -74,6 +84,65 @@ inline std::vector<SoilParams> DefaultSoils()
 inline double MoistureFactor(double moisture)
 {
   return std::clamp(1.6 - 2.4 * moisture, 0.7, 1.6);
+}
+
+/// Moisture parameters of a named soil from the built-in table (for soil maps that carry only
+/// the Bekker constants). Unknown names keep the struct defaults.
+inline void FillMoisture(SoilParams &s)
+{
+  for (const auto &d : DefaultSoils())
+    if (d.name == s.name)
+    {
+      s.refMoisture = d.refMoisture; s.wetSoftening = d.wetSoftening;
+      s.capillaryC = d.capillaryC; s.trueCohesion = d.trueCohesion;
+    }
+}
+
+/// Strength multiplier at volumetric moisture m: above the reference the soil softens
+/// exponentially (floor 0.3, a soil near its liquid limit); below it the soil hard-sets, up to 1.4.
+inline double StrengthFactor(const SoilParams &s, double m)
+{
+  const double d = m - s.refMoisture;
+  if (d > 0) return std::max(0.3, std::exp(-s.wetSoftening * d));
+  return std::min(1.4, 1.0 - 0.5 * s.wetSoftening * d);
+}
+
+/// Apparent cohesion (kPa) from capillary suction: none in bone-dry or saturated soil, full in damp.
+inline double CapillaryCohesion(const SoilParams &s, double m)
+{
+  return s.capillaryC * std::clamp((m - 0.03) / 0.07, 0.0, 1.0) * std::clamp((0.35 - m) / 0.2, 0.0, 1.0);
+}
+
+/// The soil's constants at moisture m. The moduli scale by f^(1.5 n), so sinkage under a given
+/// load grows as f^-1.5 whatever the exponent n; cohesion and friction angle soften with f.
+inline SoilParams AtMoisture(const SoilParams &s, double m)
+{
+  SoilParams o = s;
+  const double f = StrengthFactor(s, m);
+  const double km = std::pow(f, 1.5 * s.n);
+  o.kc *= km;
+  o.kphi *= km;
+  o.c = s.c * f + CapillaryCohesion(s, m);
+  o.phiDeg = s.phiDeg * std::clamp(0.6 + 0.4 * f, 0.6, 1.1);
+  return o;
+}
+
+/// Height (m) an unsupported auger-hole wall stands at moisture m: Rankine's critical height
+/// 4 c / gamma tan(45 + phi/2) on the true cohesion, x2 for arching round a small cylindrical
+/// hole, / 1.5 for the disturbance of the spinning flight. gamma: bulk unit weight, N/m^3.
+inline double CriticalWallHeight(const SoilParams &s, double m, double gamma = 16000.0)
+{
+  const SoilParams w = AtMoisture(s, m);
+  const double c = s.trueCohesion * s.c * StrengthFactor(s, m) + CapillaryCohesion(s, m);
+  return (2.0 / 1.5) * 4.0 * c * 1e3 / gamma * std::tan((45.0 + 0.5 * w.phiDeg) * kPi / 180.0);
+}
+
+/// Loose spoil (m) that ends up at the bottom of a hole of depth d once the auger is withdrawn:
+/// the wall above the critical height stands, the rest sloughs in and fills about half its height.
+inline double HoleCollapse(const SoilParams &s, double m, double d)
+{
+  const double hc = CriticalWallHeight(s, m);
+  return d > hc ? 0.5 * (d - hc) : 0.0;
 }
 
 /// Static sinkage z (m) of a rectangular contact b x l carrying normal load W (N).
@@ -90,6 +159,54 @@ inline double CompactionResistance(const SoilParams &s, double z, double b)
   if (z <= 0.0) return 0.0;
   return b * s.Modulus(b) * std::pow(z, s.n + 1.0) / (s.n + 1.0);
 }
+
+/// Compaction resistance (N) of a pass at sinkage z over ground an earlier pass pressed to zPrev:
+/// only the extra compaction costs work, plus a share for the elastic rebound of the rut.
+inline double MultiPassResistance(const SoilParams &s, double z, double zPrev, double b, double rebound = 0.15)
+{
+  const double fresh = CompactionResistance(s, z, b);
+  if (zPrev <= 0.0) return fresh;
+  return std::max(fresh - CompactionResistance(s, std::min(z, zPrev), b), rebound * fresh);
+}
+
+/// Depth each patch of ground has been pressed to by the wheels and tracks that crossed it.
+class RutMap
+{
+public:
+  explicit RutMap(double cell = 0.1) : cell_(cell) {}
+
+  double Depth(double x, double y) const
+  {
+    auto it = d_.find(Key(x, y));
+    return it == d_.end() ? 0.0 : it->second;
+  }
+
+  /// Record a tread of width b pressed to sinkage z along the line through (x, y) in the
+  /// horizontal direction (lx, ly) across the tread.
+  void Press(double x, double y, double z, double b, double lx = 0.0, double ly = 1.0)
+  {
+    const double ln = std::max(std::hypot(lx, ly), 1e-9);
+    const int steps = std::max(1, static_cast<int>(std::ceil(b / (0.5 * cell_))));
+    for (int k = 0; k <= steps; ++k)
+    {
+      const double t = (static_cast<double>(k) / steps - 0.5) * b;
+      float &v = d_[Key(x + t * lx / ln, y + t * ly / ln)];
+      v = std::max(v, static_cast<float>(z));
+    }
+    maxDepth_ = std::max(maxDepth_, z);
+  }
+
+  size_t Cells() const { return d_.size(); }
+  double Area() const { return d_.size() * cell_ * cell_; }
+  double MaxDepth() const { return maxDepth_; }
+
+private:
+  int64_t Idx(double v) const { return static_cast<int64_t>(std::floor(v / cell_)); }
+  int64_t Key(double x, double y) const { return (Idx(x) << 32) ^ (Idx(y) & 0xffffffff); }
+  double cell_;
+  double maxDepth_{0.0};
+  std::unordered_map<int64_t, float> d_;
+};
 
 /// Maximum soil shear force (N) under a contact b x l with normal load W.
 inline double ShearCapacity(const SoilParams &s, double W, double b, double l)

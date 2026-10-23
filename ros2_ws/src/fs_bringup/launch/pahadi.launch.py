@@ -28,7 +28,7 @@ ARGS = {"region": "", "slope": "", "soil": "", "rock_cover": "", "side": "downhi
         "row_spacing": "", "spacing": "", "half_moon": "true", "speed": "0.35", "max_spots": "0",
         "headless": "false", "rtf": "1.0", "rviz": "true", "seed": "23", "lidar": "true", "log_dir": "", "inspect": "false", "people": ""}
 
-CONTACTS = [f"{m}{s}{i}_link" for m in "fr" for s in "lr" for i in (1, 2, 3)]
+CONTACTS = sim.PAHADI_CONTACTS
 
 
 def setup(context):
@@ -42,8 +42,7 @@ def setup(context):
     site_file = site_dir / "hill_slope.yaml"
     ns = "pahadi"
     common = {"site_file": str(site_file), "robot": ns, "use_sim_time": True}
-    head = {"plugs": 200, "water_l": 150.0, "seedballs": 3000, "water_dose_l": 1.0, "pump_lps": 0.3,
-            "hole_depth": 0.25}
+    head = sim.head_params("pahadi")
     lidar = sim.on(c["lidar"])
     actions = sim.gazebo(site_dir / "hill_slope.sdf", sim.on(c["headless"]), float(c["rtf"]))
     actions += sim.spawn_robot("pahadi", ns, site_dir, site, lidar, inspect=sim.on(c["inspect"]))

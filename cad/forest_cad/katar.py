@@ -8,7 +8,7 @@ swings the duckbill over the hole; it descends, opens, a tamp ring firms the soi
 import math
 
 from .common import (Part, Robot, auger, box, cyl, duckbill_jaw, person, rod, rot, root_trainer_tray, tamp_ring, tray_proxy, tube,
-                     wheel_parts)
+                     feed_carriage, feed_mast, wheel_parts)
 
 TURRET_R = 200          # station offset from the turret axis, mm
 CAROUSEL = dict(x=-350, z=200, r=150, cups=12)
@@ -77,6 +77,15 @@ def build() -> Robot:
             p = box(40, 40, 1800, at=(x, y, 1400))
             shade_posts = p if shade_posts is None else shade_posts.union(p)
     trailer.append(Part("shade_posts", shade_posts, "steel", hollow=0.25))
+    # amendment hopper over the drawbar: FYM, gypsum and sand in three bins, hydrogel in a doser
+    hopper = box(500, 1300, 700, at=(-500, 0, 1050), fillet=20).cut(box(460, 1260, 690, at=(-500, 0, 1080)))
+    for y in (-215, 215):
+        hopper = hopper.union(box(460, 10, 680, at=(-500, y, 1050)))
+    trailer.append(Part("amendment_hopper", hopper, "orange", hollow=1, note="FYM 200 kg, gypsum 150 kg, sand 250 kg"))
+    trailer.append(Part("hopper_legs", box(60, 1100, 450, at=(-500, 0, 480)), "graphite", hollow=0.2))
+    trailer.append(Part("hydrogel_doser", cyl(90, 260, at=(-500, -760, 1180)), "white", hollow=0.3))
+    trailer.append(Part("screw_feeder", rod((-500, 450, 760), (-1600, 1000, 600), 45), "steel", hollow=0.3,
+                        note="to the boom hose track"))
     R.add("trailer_link", *trailer)
     R.add("loader_link", *person())
     for t in ("fl", "fr", "rl", "rr"):
@@ -105,28 +114,38 @@ def build() -> Robot:
           Part("plate", cyl(CAROUSEL["r"] + 60, 15, at=(0, 0, 0)).cut(cyl(31, 30, at=(CAROUSEL["r"], 0, 0))), "alu"),
           Part("cups", cups, "orange", hollow=1, note="12 plug cups"),
           Part("hub", cyl(40, 60, at=(0, 0, 30)), "steel"))
+    # feed masts: the auger carriage runs 1.3 m (1.5 m with the deep kit) on the outer rail, the
+    # duckbill and the tamp ring share the inner one; both end ~0.3 m above the verge
     R.add("turret_link",
           Part("disc", cyl(280, 40), "yellow", hollow=1),
           Part("auger_station", cyl(90, 120, at=(TURRET_R, 0, -40)), "graphite", hollow=0.4),
-          Part("duckbill_station", cyl(80, 120, at=(-TURRET_R, 0, -40)), "graphite", hollow=0.4))
+          Part("duckbill_station", cyl(80, 120, at=(-TURRET_R, 0, -40)), "graphite", hollow=0.4),
+          Part("auger_mast", feed_mast(1500, TURRET_R + 150, z_top=-60), "yellow", hollow=0.35, note="auger feed rail"),
+          Part("duckbill_mast", feed_mast(1500, -TURRET_R - 140, z_top=-60), "yellow", hollow=0.35, note="duckbill and tamp rail"),
+          Part("feed_cylinders", rod((TURRET_R + 150, 70, -60), (TURRET_R + 150, 70, -1500), 28)
+               .union(rod((-TURRET_R - 140, -70, -60), (-TURRET_R - 140, -70, -1500), 24)), "steel", hollow=0.5))
     R.add("auger_feed_link", Part("hydraulic_motor", cyl(75, 160), "graphite", hollow=0.6),
-          Part("feed_cylinder", cyl(30, 600, at=(60, 0, 300)), "steel", hollow=0.5))
+          Part("carriage", feed_carriage(150, 0, h=180), "yellow", hollow=0.4))
     R.add("auger_link", *auger(950, 150))
-    _head(R, jaw_len=320)
+    R.add("auger_link_deep", *auger(1450, 150))       # deep-auger kit for 1.2 m CSSRI auger holes (mesh only)
+    _head(R, jaw_len=320, mast=(-140, 0))
     return R
 
 
-def _head(R: Robot, jaw_len: int):
-    """Duckbill feed, jaws, tamp ring (shared by Katar and Jaal)."""
+def _head(R: Robot, jaw_len: int, mast=(-140, 0)):
+    """Duckbill feed, jaws, tamp ring (shared by Katar and Jaal). mast: where the duckbill's guide
+    rail stands, relative to the duckbill axis; the duckbill and the tamp ring ride it on carriages."""
+    mx, my = mast
     R.add("duckbill_feed_link",
           Part("housing", tube(58, 48, 160, at=(0, 0, -40)), "graphite", hollow=1),
           Part("hinge_brackets", box(40, 120, 50, at=(0, 0, -105)), "steel"),
           Part("jaw_actuators", rod((30, 40, -40), (30, 75, -160), 9).union(rod((30, -40, -40), (30, -75, -160), 9)), "steel"),
           Part("water_nozzle", rod((-40, 0, -40), (-70, 0, -300), 8), "brass"),
-          Part("feed_rod", cyl(22, 700, at=(0, 0, 330)), "steel", hollow=0.6))
+          Part("carriage", feed_carriage(mx, my, h=150, shift=50), "yellow", hollow=0.4))
     R.add("jaw_l_link", Part("jaw", duckbill_jaw(+1, length=jaw_len), "steel"))
     R.add("jaw_r_link", Part("jaw", duckbill_jaw(-1, length=jaw_len), "steel"))
-    R.add("tamp_link", Part("ring", tamp_ring(), "graphite"))
+    R.add("tamp_link", Part("ring", tamp_ring(rod_len=60), "graphite"),
+          Part("carriage", feed_carriage(mx, my, h=110, shift=-50), "graphite", hollow=0.4))
 
 
 def _rops():

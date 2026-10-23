@@ -49,6 +49,7 @@ void SoilMap::Load(const std::string &path)
     {
       int idx; SoilParams s;
       if (!(ls >> idx >> s.name >> s.n >> s.kc >> s.kphi >> s.c >> s.phiDeg >> s.K >> s.eb)) fail("bad soil line");
+      FillMoisture(s);
       table[idx] = s;
     }
     else if (key == "layer")

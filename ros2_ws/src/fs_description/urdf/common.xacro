@@ -54,11 +54,12 @@
 
   <!-- A wheel spinning about its local +y axis. shape: cylinder | sphere (sphere rides rough terrain better).
        With robot:=<name> the visual is that robot's CAD mesh for this link. -->
-  <xacro:macro name="wheel" params="name parent xyz r w m rim:=fs_yellow shape:=cylinder robot:=''">
+  <!-- effort: the most torque the drive can put on the wheel, N m (free-rolling wheels: bearing drag only) -->
+  <xacro:macro name="wheel" params="name parent xyz r w m rim:=fs_yellow shape:=cylinder robot:='' effort:=6000">
     <joint name="${name}_joint" type="continuous">
       <parent link="${parent}"/><child link="${name}_link"/>
       <origin xyz="${xyz}"/><axis xyz="0 1 0"/>
-      <limit effort="6000" velocity="40"/><dynamics damping="0.5"/>
+      <limit effort="${effort}" velocity="40"/><dynamics damping="0.5"/>
     </joint>
     <link name="${name}_link">
       <xacro:cyl_inertial_y m="${m}" r="${r}" l="${w}"/>
@@ -150,7 +151,7 @@
 
   <!-- Auger head: prismatic feed (positive = down along the tool), spin joint, auger link whose
        origin is at the feed carrier; the bit tip is at feed_axis * length. -->
-  <xacro:macro name="auger_head" params="robot parent xyz rpy:='0 0 0' length stroke feed_axis:='0 0 -1' spin_axis:='0 0 1'">
+  <xacro:macro name="auger_head" params="robot parent xyz rpy:='0 0 0' length stroke feed_axis:='0 0 -1' spin_axis:='0 0 1' mesh:='auger_link'">
     <joint name="auger_feed_joint" type="prismatic">
       <parent link="${parent}"/><child link="auger_feed_link"/>
       <origin xyz="${xyz}" rpy="${rpy}"/><axis xyz="${feed_axis}"/>
@@ -166,7 +167,7 @@
     </joint>
     <link name="auger_link">
       <inertial><mass value="10"/><inertia ixx="0.3" iyy="0.3" izz="0.3" ixy="0" ixz="0" iyz="0"/></inertial>
-      <xacro:mesh_visual robot="${robot}" link="auger_link"/>
+      <xacro:mesh_visual robot="${robot}" link="${mesh}"/>
     </link>
   </xacro:macro>
 

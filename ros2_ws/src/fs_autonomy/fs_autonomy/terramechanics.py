@@ -40,6 +40,60 @@ def shear_fraction(i: float, l: float, K: float) -> float:
     return 1.0 - (1.0 - math.exp(-a)) / a
 
 
+# moisture the Bekker constants were measured at, exponential softening above it, capillary
+# cohesion of damp sand (kPa), and the share of c that is real cohesion (SoilModel.hh DefaultSoils)
+MOISTURE = {
+    "dry_sand": (0.05, 0.0, 3.0, 0.0),
+    "sandy_loam": (0.15, 4.0, 0.5, 0.6),
+    "clayey_soil": (0.20, 6.0, 0.0, 1.0),
+    "heavy_clay": (0.25, 8.0, 0.0, 1.0),
+    "lateritic_gravel": (0.10, 2.0, 0.0, 0.5),
+}
+
+
+def _mp(soil: dict):
+    return MOISTURE.get(soil.get("name", ""), (0.15, 4.0, 0.0, 1.0))
+
+
+def strength_factor(soil: dict, m: float) -> float:
+    ref, soft, _, _ = _mp(soil)
+    d = m - ref
+    return max(0.3, math.exp(-soft * d)) if d > 0 else min(1.4, 1.0 - 0.5 * soft * d)
+
+
+def capillary_cohesion(soil: dict, m: float) -> float:
+    cap = _mp(soil)[2]
+    return cap * min(max((m - 0.03) / 0.07, 0.0), 1.0) * min(max((0.35 - m) / 0.2, 0.0), 1.0)
+
+
+def at_moisture(soil: dict, m: float) -> dict:
+    """The soil's constants at volumetric moisture m (sinkage grows as f^-1.5, c and phi soften)."""
+    f = strength_factor(soil, m)
+    km = f ** (1.5 * soil["n"])
+    return dict(soil, kc=soil["kc"] * km, kphi=soil["kphi"] * km, c=soil["c"] * f + capillary_cohesion(soil, m),
+                phi=soil["phi"] * min(max(0.6 + 0.4 * f, 0.6), 1.1))
+
+
+def critical_wall_height(soil: dict, m: float, gamma: float = 16000.0) -> float:
+    """Height (m) an unsupported auger-hole wall stands: Rankine x2 arching / 1.5 disturbance."""
+    w = at_moisture(soil, m)
+    c = _mp(soil)[3] * soil["c"] * strength_factor(soil, m) + capillary_cohesion(soil, m)
+    return (2.0 / 1.5) * 4.0 * c * 1e3 / gamma * math.tan(math.radians(45.0 + 0.5 * w["phi"]))
+
+
+def hole_collapse(soil: dict, m: float, d: float) -> float:
+    """Loose spoil (m) at the bottom of a hole of depth d once the auger is out."""
+    hc = critical_wall_height(soil, m)
+    return 0.5 * (d - hc) if d > hc else 0.0
+
+
+def multipass_resistance(soil: dict, z: float, z_prev: float, b: float, rebound: float = 0.15) -> float:
+    fresh = compaction_resistance(soil, z, b)
+    if z_prev <= 0:
+        return fresh
+    return max(fresh - compaction_resistance(soil, min(z, z_prev), b), rebound * fresh)
+
+
 def drawbar_pull(soil: dict, loads, b: float, l: float, slip: float) -> float:
     """Net pull (N) of a set of contacts at a common slip: thrust minus compaction resistance."""
     thrust = sum(shear_capacity(soil, W, b, l) * shear_fraction(slip, l, soil["K"]) for W in loads)

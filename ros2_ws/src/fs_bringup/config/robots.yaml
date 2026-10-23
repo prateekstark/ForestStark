@@ -1,0 +1,28 @@
+# Per-robot settings shared by the simulation launches and robot.launch.py. On a machine these are
+# the as-built numbers: change them here, not in a launch file.
+katar:
+  head:                   # planting head (fs_autonomy planting_head)
+    plugs: 1200           # carousel capacity
+    water_l: 1000.0       # trailer tank
+    water_dose_l: 1.0     # default dose when the region gives none
+    pump_lps: 0.5
+    hole_depth: 0.30
+jaal:
+  head:
+    plugs: 360            # two drums
+    water_l: 250.0
+    water_dose_l: 0.5
+    pump_lps: 0.4
+    hole_depth: 0.25
+  navigator:              # energy budget (fs_autonomy jaal_navigator)
+    mass_kg: 2015.0       # running order, from the CAD (docs/physics_audit.md)
+    battery_kwh: 30.0
+    water_capacity_l: 250.0
+pahadi:
+  head:
+    plugs: 200
+    water_l: 150.0
+    seedballs: 3000
+    water_dose_l: 1.0
+    pump_lps: 0.3
+    hole_depth: 0.25

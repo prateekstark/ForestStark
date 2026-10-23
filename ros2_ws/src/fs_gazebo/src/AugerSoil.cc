@@ -14,13 +14,20 @@
 // <hardpan_factor> times the soil's energy: the CSSRI auger-hole technique for sodic land bores
 // through it so roots can reach the moister, less sodic subsoil. Re-boring an existing hole costs little energy.
 //
+// When the auger is withdrawn the hole's wall stands up to its critical height at the local moisture
+// (fs::soil::CriticalWallHeight); below that it sloughs in and loose spoil fills the bottom
+// ("collapse", "open_depth" in the status). Dry dune sand caves; pouring water into the pit
+// ("wet <litres>") gives the wall capillary cohesion, and a re-bore then leaves an open hole.
+//
 // Commands (gz.msgs.StringMsg on <cmd_topic>):  "bore 0.30" | "pick 0.30" | "retract" | "stop"
 //   | "hold" (safety: spin and feed stop where they are) | "resume" (carry on with the held phase)
+//   | "wet 5" (litres poured into the last hole)
 // Status   (gz.msgs.StringMsg JSON on <status_topic>, <publish_rate> Hz).
 #include <gz/msgs/stringmsg.pb.h>
 
 #include <chrono>
 #include <cmath>
+#include <deque>
 #include <iomanip>
 #include <mutex>
 #include <optional>
@@ -51,6 +58,7 @@ class AugerSoil : public gz::sim::System,
                   public gz::sim::ISystemPreUpdate
 {
   struct Hole { double x, y, depth; };
+  struct Wet { double x, y, dm; };
 
 public:
   void Configure(const gz::sim::Entity &_entity, const std::shared_ptr<const sdf::Element> &_sdf,
@@ -141,9 +149,9 @@ public:
         spinning = true;
         depth_ = std::max(0.0, holeTop_ - tipWorld.Z());
         const auto s = map_.Sample(holeX_, holeY_);
-        soilName_ = s.soil->name; rockDepth_ = s.rockDepth; moisture_ = s.moisture;
+        soilName_ = s.soil->name; rockDepth_ = s.rockDepth; moisture_ = MoistureAt(holeX_, holeY_, s.moisture);
         if (depth_ >= target_) { SetPhase(Phase::Bored); break; }
-        double e = s.soil->eb * 1e6 * sm::MoistureFactor(s.moisture);
+        double e = s.soil->eb * 1e6 * sm::MoistureFactor(moisture_);
         inPan_ = depth_ >= s.hardpan && depth_ < s.hardpan + 0.3;      // a pan is ~0.3 m thick
         if (inPan_) e *= hardpanFactor_;
         sm::AugerParams p = p_;
@@ -217,18 +225,21 @@ private:
   void OnCmd(const gz::msgs::StringMsg &_msg)
   {
     std::lock_guard<std::mutex> lk(mtx_);
-    pending_ = _msg.data();
+    pending_.push_back(_msg.data());   // every command in order: "wet" then "bore" can land in one step
   }
 
   void TakeCommand()
   {
-    std::string cmd;
+    std::deque<std::string> cmds;
     {
       std::lock_guard<std::mutex> lk(mtx_);
-      if (!pending_) return;
-      cmd = *pending_;
-      pending_.reset();
+      cmds.swap(pending_);
     }
+    for (const auto &cmd : cmds) Execute(cmd);
+  }
+
+  void Execute(const std::string &cmd)
+  {
     std::istringstream in(cmd);
     std::string verb; double d = 0.3;
     in >> verb >> d;
@@ -236,10 +247,28 @@ private:
     {
       pick_ = verb == "pick";
       target_ = std::clamp(d, 0.02, maxStroke_);
-      energy_ = 0; depth_ = 0; inRock_ = false;
+      energy_ = 0; depth_ = 0; collapse_ = 0; inRock_ = false;
       SetPhase(Phase::Lowering);
     }
-    else if (verb == "retract") SetPhase(Phase::Retracting);
+    else if (verb == "retract")
+    {
+      if (depth_ > 0.0 && phase_ != Phase::Retracting && phase_ != Phase::Idle)
+      {
+        // the wall loses the flight's support: what stands above its critical height falls in
+        const auto s = map_.Sample(holeX_, holeY_);
+        const double wall = std::min(depth_, s.rockDepth);
+        collapse_ = sm::HoleCollapse(*s.soil, MoistureAt(holeX_, holeY_, s.moisture), wall);
+      }
+      SetPhase(Phase::Retracting);
+    }
+    else if (verb == "wet")
+    {
+      // water soaks the wall around the pit: volume over the wetted soil cylinder
+      const double r = 0.5 * p_.diameter + 0.1;
+      const double dm = std::min(0.2, d / 1000.0 / (sm::kPi * r * r * std::max(depth_, 0.3)));
+      wets_.push_back({holeX_, holeY_, dm});
+      gzmsg << "[fs::AugerSoil] " << d << " L into the pit: moisture +" << dm << "\n";
+    }
     else if (verb == "stop") SetPhase(Phase::Stopped);
     else if (verb == "hold")
     {
@@ -250,6 +279,14 @@ private:
       if (phase_ == Phase::Held) { phase_ = heldFrom_; phaseStart_ = simTime_; }
     }
     else gzwarn << "[fs::AugerSoil] unknown command '" << cmd << "'\n";
+  }
+
+  /// Map moisture at (x, y) plus what has been poured in nearby.
+  double MoistureAt(double x, double y, double base) const
+  {
+    double m = base;
+    for (const auto &w : wets_) if (std::hypot(w.x - x, w.y - y) < 0.3) m += w.dm;
+    return std::min(m, 0.45);
   }
 
   void Resolve(gz::sim::EntityComponentManager &_ecm)
@@ -285,7 +322,8 @@ private:
     std::ostringstream js;
     js << std::fixed << std::setprecision(4)
        << "{\"t\":" << simTime_ << ",\"phase\":\"" << Name(phase_) << "\",\"phase_time\":" << (simTime_ - phaseStart_)
-       << ",\"depth\":" << depth_ << ",\"target\":" << target_ << ",\"stroke\":" << q
+       << ",\"depth\":" << depth_ << ",\"collapse\":" << collapse_ << ",\"open_depth\":" << depth_ - collapse_
+       << ",\"target\":" << target_ << ",\"stroke\":" << q
        << ",\"tip_z\":" << tipZ_ << ",\"ground_z\":" << groundZ_ << ",\"feed_cmd\":" << feedCmd_
        << ",\"feed\":" << rate_.feed << ",\"thrust\":" << rate_.thrust << ",\"torque\":" << rate_.torque
        << ",\"power\":" << rate_.power << ",\"energy_kj\":" << energy_ / 1000.0
@@ -315,12 +353,13 @@ private:
   Phase phase_{Phase::Idle};
   Phase heldFrom_{Phase::Idle};
   double simTime_{0}, phaseStart_{0}, lastPub_{-1}, publishPeriod_{0.05};
-  double target_{0.3}, depth_{0}, energy_{0}, holeX_{0}, holeY_{0}, holeTop_{0};
+  double target_{0.3}, depth_{0}, collapse_{0}, energy_{0}, holeX_{0}, holeY_{0}, holeTop_{0};
   double rockDepth_{0}, moisture_{0};
   std::string soilName_{""};
   std::vector<Hole> holes_;
+  std::vector<Wet> wets_;
   std::mutex mtx_;
-  std::optional<std::string> pending_;
+  std::deque<std::string> pending_;
   gz::transport::Node node_;
   gz::transport::Node::Publisher pub_;
 };

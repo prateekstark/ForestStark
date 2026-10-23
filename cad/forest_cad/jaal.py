@@ -8,7 +8,7 @@ its way; the shuttle then swaps the duckbill over the hole.
 """
 import math
 
-from .common import Part, Robot, auger, box, cone, cyl, rod, tube, wheel_parts
+from .common import Part, Robot, auger, box, cone, cyl, feed_carriage, feed_mast, rod, tube, wheel_parts
 from .katar import _head
 
 DRUM = dict(tiers=4, pockets=45, r=410, z0=100, dz=400, disc_r=480)
@@ -77,7 +77,11 @@ def build() -> Robot:
           Part("rail_supports", rail_supports, "graphite", hollow=0.3),
           Part("funnel", funnel, "alu"), Part("feed_hose", feed_hose, "hose", hollow=0.2),
           Part("water_tank", box(600, 900, 300, at=(-600, 0, 0), fillet=40), "blue", hollow=0.05, note="250 L, under the deck"),
-          Part("front_lidar", cyl(50, 70, at=(1520, 0, -80)), "graphite"))
+          Part("front_lidar", cyl(50, 70, at=(1520, 0, -80)), "graphite"),
+          # amendment hopper between the rear drum and the gantry, screw feeder to the shuttle
+          Part("amendment_hopper", box(360, 780, 480, at=(-1120, 0, 735), fillet=15).cut(box(330, 750, 470, at=(-1120, 0, 750))),
+               "orange", hollow=1, note="FYM 60 kg, gypsum 20 kg, sand 80 kg"),
+          Part("screw_feeder", rod((-1120, -250, 520), (-1650, -250, 1000), 32), "steel", hollow=0.3))
     for tag in ("fl", "fr", "rl", "rr"):
         R.add(f"steer_{tag}_link", Part("fork", box(160, 120, 300), "graphite", hollow=0.4),
               Part("steer_motor", cyl(55, 120, at=(0, 0, 200)), "graphite"))
@@ -93,11 +97,16 @@ def build() -> Robot:
           Part("palm", box(90, 30, 70, at=(0, -125, 0)), "graphite"))
     R.add("finger_a_link", Part("finger", h_finger(+1), "steel"))
     R.add("finger_b_link", Part("finger", h_finger(-1), "steel"))
+    # feed masts on the shuttle: 1.15 m rails beside the auger and the duckbill, foot ~0.1 m above ground
     R.add("shuttle_link",
           Part("plate", box(620, 220, 30, at=(SHUTTLE_DUCKBILL / 2, 0, 20)), "yellow", hollow=1),
           Part("auger_station", cyl(70, 80, at=(0, 0, -20)), "graphite", hollow=0.4),
-          Part("duckbill_station", cyl(70, 80, at=(SHUTTLE_DUCKBILL, 0, -20)), "graphite", hollow=0.4))
-    R.add("auger_feed_link", Part("motor", cyl(75, 160), "graphite", hollow=0.6))
+          Part("duckbill_station", cyl(70, 80, at=(SHUTTLE_DUCKBILL, 0, -20)), "graphite", hollow=0.4),
+          Part("auger_mast", feed_mast(1150, 0, 130, z_top=-40, w=50, d=60), "yellow", hollow=0.35, note="auger feed rail"),
+          Part("duckbill_mast", feed_mast(1150, SHUTTLE_DUCKBILL, -130, z_top=-40, w=50, d=60), "yellow", hollow=0.35,
+               note="duckbill and tamp rail"))
+    R.add("auger_feed_link", Part("motor", cyl(75, 160), "graphite", hollow=0.6),
+          Part("carriage", feed_carriage(0, 130, h=170), "yellow", hollow=0.4))
     R.add("auger_link", *auger(720, 120))
-    _head(R, jaw_len=300)
+    _head(R, jaw_len=300, mast=(0, -130))
     return R

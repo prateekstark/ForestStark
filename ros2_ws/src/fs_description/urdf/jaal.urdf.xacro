@@ -38,7 +38,7 @@
       <inertial><mass value="8"/><inertia ixx="0.1" iyy="0.1" izz="0.1" ixy="0" ixz="0" iyz="0"/></inertial>
       <xacro:mesh_visual robot="${R}" link="steer_${tag}_link"/>
     </link>
-    <xacro:wheel name="wheel_${tag}" parent="steer_${tag}_link" xyz="0 0 -0.25" r="0.38" w="0.22" m="35" robot="${R}"/>
+    <xacro:wheel effort="900" name="wheel_${tag}" parent="steer_${tag}_link" xyz="0 0 -0.25" r="0.38" w="0.22" m="35" robot="${R}"/>
   </xacro:macro>
   <xacro:module tag="fl" x="0.95" y="0.83"/>
   <xacro:module tag="fr" x="0.95" y="-0.83"/>

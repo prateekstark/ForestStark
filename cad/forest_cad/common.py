@@ -214,6 +214,27 @@ def duckbill_jaw(side: int, length=320, r_top=46, r_tip=10, wall=3):
     return half.union(lug).translate((0, -side * r_top, 0))
 
 
+def feed_mast(length, x, y=0.0, z_top=0.0, w=70, d=50):
+    """Fixed guide rail for a feed carriage: a steel channel hanging from z_top down `length` at (x, y),
+    with a mounting bracket back to the tool axis and a foot at the bottom. Everything that feeds down
+    (auger motor, duckbill, tamp ring) runs on one of these, so nothing hangs in the air."""
+    rail = box(w, d, length, at=(x, y, z_top - length / 2))
+    slot = box(w - 24, d + 2, length - 40, at=(x, y, z_top - length / 2))
+    bracket = rod((0, 0, z_top + 10), (x, y, z_top + 10), 24)
+    foot = box(w + 50, d + 50, 14, at=(x, y, z_top - length - 7))
+    return rail.cut(slot).union(bracket).union(foot)
+
+
+def feed_carriage(dx, dy=0.0, h=170, w=95, d=80, shift=0.0):
+    """Carriage block that rides a mast at (dx, dy), with an arm back to the tool at the link origin.
+    shift: sideways offset along the rail face, so two carriages can share one rail."""
+    L = math.hypot(dx, dy) or 1.0
+    px, py = -dy / L * shift, dx / L * shift
+    block = box(w, d, h, at=(dx + px, dy + py, 0))
+    arm = rod((0, 0, 0), (dx + px, dy + py, 0), 22)
+    return block.union(arm)
+
+
 def tamp_ring(r_in=62, r_out=102, h=26, rods=3, rod_len=230):
     ring = tube(r_out, r_in, h, at=(0, 0, -h / 2))
     out = ring

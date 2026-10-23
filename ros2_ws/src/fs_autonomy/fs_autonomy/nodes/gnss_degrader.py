@@ -1,4 +1,4 @@
-"""Simulation-only GNSS quality model between Gazebo's NavSat sensor and the robot.
+"""GNSS quality model between Gazebo's NavSat sensor and the robot, and the same contract on hardware.
 
 Gazebo gives an RTK-grade fix everywhere. This node makes it behave like a field receiver:
   mode rtk       RTK fix (sigma 2 cm) except inside the site's degraded zones (tree lines),
@@ -6,6 +6,9 @@ Gazebo gives an RTK-grade fix everywhere. This node makes it behave like a field
                  dropouts (no fix) at <dropouts_per_hour>.
   mode standard  plain GNSS: correlated wander with sigma 1.5 m, 1 Hz.
   mode none      no fix at all (odometry only).
+  mode receiver  on the robot: a real receiver's driver publishes gnss/fix_raw; the fix passes through
+                 unchanged and its status is read from NavSatStatus and the covariance
+                 (GBAS = RTK fix, sigma < 0.5 m = float, any other fix = standard).
 Publishes gnss/fix and gnss/status (rtk_fix | float | standard | none).
 """
 import math
@@ -43,7 +46,23 @@ class GnssDegrader(Node):
         a = math.exp(-dt / tau)
         self.err = a * self.err + sigma * math.sqrt(1 - a * a) * self.rng.normal(size=2)
 
+    def on_receiver(self, m: NavSatFix):
+        sigma = math.sqrt(max(m.position_covariance[0], 0.0)) if m.position_covariance_type else 9.0
+        if m.status.status < NavSatStatus.STATUS_FIX or not math.isfinite(m.latitude):
+            status = "none"
+        elif m.status.status == NavSatStatus.STATUS_GBAS_FIX and sigma < 0.1:
+            status = "rtk_fix"
+        else:
+            status = "float" if sigma < 0.5 else "standard"
+        if status != self.status:
+            self.get_logger().info(f"GNSS {self.status or 'start'} -> {status}")
+            self.status = status
+        self.spub.publish(String(data=status))
+        self.pub.publish(m)
+
     def on_fix(self, m: NavSatFix):
+        if self.mode == "receiver":
+            return self.on_receiver(m)
         t = sim_now(self)
         dt = 0.1 if self.last_t is None else max(1e-3, t - self.last_t)
         self.last_t = t

@@ -55,6 +55,8 @@ def build() -> Robot:
         Part("hopper_lid", cyl(190, 30, at=(-1320, 0, 835)), "graphite"),
         Part("seed_hose", rod((-1320, 0, 400), (-300, 280, 900), 18), "hose", hollow=0.3),
         Part("beacon", cyl(50, 90, at=(-1320, 0, 900)), "orange"),
+        Part("amendment_bin", box(280, 520, 330, at=(-1060, 0, 565), fillet=12).cut(box(250, 490, 320, at=(-1060, 0, 575))),
+             "orange", hollow=1, note="FYM 25 kg, hydrogel 1 kg"),
     ]
     for k, z in enumerate((430, 650, 870)):
         rear.append(Part(f"spare_tray_{k}", root_trainer_tray().translate((-560, 0, z + 8 + 126)), "tray", lod="step"))
@@ -77,9 +79,14 @@ def build() -> Robot:
           Part("tool_block", box(140, 120, 120, at=(70, 0, 0), fillet=8), "graphite", hollow=0.4),
           Part("gripper_body", box(110, 120, 80, at=(GRIP["x"], 0, -95)), "yellow", hollow=0.4),
           Part("seed_injector", tube(22, 17, 200, at=(80, 0, 120), axis="x"), "orange", hollow=1),
-          Part("water_nozzle", rod((120, 50, -40), (160, 60, -200), 7), "brass"))
+          Part("water_nozzle", rod((120, 50, -40), (160, 60, -200), 7), "brass"),
+          # feed rail along +x for the auger carriage (0.45 m stroke)
+          Part("feed_rail", box(600, 46, 36, at=(140 + 300, 0, 92)).cut(box(560, 48, 14, at=(140 + 300, 0, 92))), "steel",
+               hollow=0.6),
+          Part("rail_end", box(30, 70, 70, at=(140 + 600, 0, 80)), "graphite"))
     R.add("finger_l_link", Part("finger", finger(110, +1), "steel"))
     R.add("finger_r_link", Part("finger", finger(110, -1), "steel"))
-    R.add("auger_feed_link", Part("motor", cyl(70, 150, axis="x"), "graphite", hollow=0.6))
+    R.add("auger_feed_link", Part("motor", cyl(70, 150, axis="x"), "graphite", hollow=0.6),
+          Part("carriage", box(130, 80, 40, at=(0, 0, 92)).union(box(40, 40, 40, at=(0, 0, 62))), "yellow", hollow=0.5))
     R.add("auger_link", *[Part(p.name, p.shape.rotate((0, 0, 0), (0, 1, 0), -90), p.material) for p in auger(360, 120)])
     return R

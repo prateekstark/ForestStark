@@ -8,6 +8,12 @@
 //   * a lateral soil force from side-slip, same capacity scaled by <lateral_factor>
 //   * compaction resistance from Bekker sinkage
 //
+// The soil's constants are taken at the local moisture (fs::soil::AtMoisture): a monsoon-wet
+// vertisol loses most of its traction, damp sand gains a little. Ground that any robot in the
+// world has already pressed down is remembered on a shared rut map, so a wheel that follows a
+// rut (a trailer behind its tractor, a second Jaal on the first one's track) only pays for the
+// extra compaction (fs::soil::MultiPassResistance).
+//
 // Normal loads come from a quasi-static distribution of the whole model's weight over the
 // contacts that touch the ground (soil-map elevation + <contact_tolerance>). Soil type,
 // moisture and elevation are read from the site soil map.
@@ -28,6 +34,7 @@
 #include <chrono>
 #include <cmath>
 #include <iomanip>
+#include <map>
 #include <memory>
 #include <mutex>
 #include <sstream>
@@ -56,6 +63,17 @@ namespace soil_ns = fs::soil;
 static soil_ns::Vec3 ToV(const Vector3d &v) { return {v.X(), v.Y(), v.Z()}; }
 static Vector3d ToG(const soil_ns::Vec3 &v) { return {v.x, v.y, v.z}; }
 
+/// One rut map per site, shared by every model's Terramechanics system in this server.
+static std::shared_ptr<soil_ns::RutMap> SharedRuts(const std::string &site)
+{
+  static std::mutex mtx;
+  static std::map<std::string, std::weak_ptr<soil_ns::RutMap>> maps;
+  std::lock_guard<std::mutex> lk(mtx);
+  auto r = maps[site].lock();
+  if (!r) { r = std::make_shared<soil_ns::RutMap>(0.1); maps[site] = r; }
+  return r;
+}
+
 class Terramechanics : public gz::sim::System,
                        public gz::sim::ISystemConfigure,
                        public gz::sim::ISystemPreUpdate
@@ -68,7 +86,7 @@ class Terramechanics : public gz::sim::System,
     Vector3d axisLocal{0, 1, 0};
     soil_ns::Bristle lon, lat;
     // telemetry
-    double N{0}, z{0}, slip{0}, fx{0}, fy{0}, rc{0}, fmax{0};
+    double N{0}, z{0}, slip{0}, fx{0}, fy{0}, rc{0}, fmax{0}, rut{0};
     bool touching{false};
   };
 
@@ -95,6 +113,7 @@ public:
     contactTol_ = _sdf->Get<double>("contact_tolerance", 0.03).first;
     bristle_ = _sdf->Get<double>("bristle_deflection", 0.005).first;
     latFactor_ = _sdf->Get<double>("lateral_factor", 0.85).first;
+    ruts_ = SharedRuts(mapPath.empty() ? "uniform:" + def : mapPath);
 
     for (auto w = _sdf->FindElement("wheel"); w; w = w->GetNextElement("wheel"))
     {
@@ -160,7 +179,7 @@ public:
     {
       auto &w = wheels_[k];
       w.touching = touch[k];
-      w.fx = w.fy = w.rc = w.z = w.slip = w.fmax = 0;
+      w.fx = w.fy = w.rc = w.z = w.slip = w.fmax = w.rut = 0;
       w.N = 0;
       if (!touch[k]) { w.lon.z = 0; w.lat.z = 0; continue; }
       auto pose = w.link.WorldPose(_ecm);
@@ -176,12 +195,20 @@ public:
       const Vector3d p = c - n * w.r;
 
       const auto smp = map_.Sample(p.X(), p.Y());
-      const auto &soil = *smp.soil;
+      const auto soil = soil_ns::AtMoisture(*smp.soil, smp.moisture);
       lastSoil_ = soil.name;
+      lastMoisture_ = smp.moisture;
       const double N = Nvert[k] * std::max(0.2, n.Z());
       w.N = N;
       w.z = soil_ns::Sinkage(soil, N, w.b, w.l);
-      w.rc = soil_ns::CompactionResistance(soil, w.z, w.b);
+      // ground just ahead of the patch tells whether it was pressed before; the wheel presses its
+      // own rut behind the patch, a cell clear of where it looks, so it never meets itself
+      const double dir = vel->Dot(fwd) >= 0 ? 1.0 : -1.0;
+      const Vector3d ahead = p + fwd * (dir * (0.5 * w.l + 0.1));
+      const Vector3d behind = p - fwd * (dir * 0.5 * w.l);
+      w.rut = ruts_->Depth(ahead.X(), ahead.Y());
+      w.rc = soil_ns::MultiPassResistance(soil, w.z, w.rut, w.b);
+      if (std::fabs(vel->Dot(fwd)) > 0.02) ruts_->Press(behind.X(), behind.Y(), w.z, w.b, lat.X(), lat.Y());
       w.fmax = soil_ns::ShearCapacity(soil, N, w.b, w.l);
 
       const double vx = vel->Dot(fwd);
@@ -258,14 +285,15 @@ private:
     std::ostringstream js;
     js << std::fixed << std::setprecision(4);
     js << "{\"t\":" << simTime_ << ",\"mass\":" << mass << ",\"cg\":[" << cg.X() << "," << cg.Y() << "," << cg.Z()
-       << "],\"mean_slip\":" << meanSlip << ",\"lateral_utilisation\":" << latUtil
+       << "],\"moisture\":" << lastMoisture_ << ",\"rut_area\":" << ruts_->Area()
+       << ",\"rut_max\":" << ruts_->MaxDepth() << ",\"mean_slip\":" << meanSlip << ",\"lateral_utilisation\":" << latUtil
        << ",\"motion_resistance\":" << res << ",\"wheels\":[";
     for (size_t k = 0; k < wheels_.size(); ++k)
     {
       const auto &w = wheels_[k];
       js << (k ? "," : "") << "{\"name\":\"" << w.linkName << "\",\"touch\":" << (w.touching ? "true" : "false")
          << ",\"N\":" << w.N << ",\"z\":" << w.z << ",\"slip\":" << w.slip << ",\"fx\":" << w.fx
-         << ",\"fy\":" << w.fy << ",\"rc\":" << w.rc << ",\"fmax\":" << w.fmax << "}";
+         << ",\"fy\":" << w.fy << ",\"rc\":" << w.rc << ",\"rut\":" << w.rut << ",\"fmax\":" << w.fmax << "}";
     }
     js << "],\"soil\":\"" << lastSoil_ << "\"}";
     gz::msgs::StringMsg msg;
@@ -282,6 +310,8 @@ private:
   double publishPeriod_{0.1}, contactTol_{0.06}, bristle_{0.005}, latFactor_{0.85};
   double simTime_{0}, lastPub_{-1};
   std::string lastSoil_{""};
+  double lastMoisture_{0};
+  std::shared_ptr<soil_ns::RutMap> ruts_;
   gz::transport::Node node_;
   gz::transport::Node::Publisher pub_;
 };

@@ -1,0 +1,44 @@
+name: ci
+on:
+  push: {branches: [main]}
+  pull_request:
+
+jobs:
+  build-test:
+    runs-on: ubuntu-latest
+    container: ros:lyrical-ros-base
+    defaults: {run: {shell: bash}}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Dependencies
+        run: |
+          apt-get update && apt-get install -y git
+          rosdep update --rosdistro lyrical
+          rosdep install -y -r --from-paths ros2_ws/src --ignore-src --rosdistro lyrical
+      - name: Build
+        working-directory: ros2_ws
+        run: source /opt/ros/lyrical/setup.bash && colcon build --event-handlers console_cohesion+
+      - name: Test
+        working-directory: ros2_ws
+        run: |
+          source install/setup.bash
+          colcon test --event-handlers console_direct+
+          colcon test-result --verbose
+      - name: Physics audit and hardware contract are current
+        working-directory: ros2_ws
+        run: |
+          source install/setup.bash
+          ros2 run fs_bringup physics_audit --out ../docs/physics_audit.md
+          ros2 run fs_bringup interface_contract --out ../docs/hardware_interface.md
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          git diff --exit-code -- ../docs/physics_audit.md ../docs/hardware_interface.md
+          ! grep -q "\*\*FAIL\*\*" ../docs/physics_audit.md
+
+  image:
+    runs-on: ubuntu-latest
+    needs: build-test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/build-push-action@v6
+        with: {context: ., file: docker/Dockerfile, target: robot, push: false, tags: "foreststark:robot"}

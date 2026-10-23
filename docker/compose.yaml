@@ -1,0 +1,39 @@
+# docker compose -f docker/compose.yaml up robot      (on the machine; ROBOT, NS, SITE set in docker/.env)
+# docker compose -f docker/compose.yaml run --rm sim  (workstation, with an X display)
+x-ros: &ros
+  network_mode: host          # DDS discovery with the drivers and the operator tablet
+  ipc: host
+  environment:
+    ROS_DOMAIN_ID: ${ROS_DOMAIN_ID:-42}
+    FASTDDS_BUILTIN_TRANSPORTS: UDPv4
+
+services:
+  robot:
+    <<: *ros
+    image: foreststark:robot
+    build: {context: .., dockerfile: docker/Dockerfile, target: robot}
+    restart: unless-stopped
+    volumes:
+      - ${SITE_DIR:-/data/site}:/data/site:ro      # surveyed site YAML + soil map
+      - ${LOG_DIR:-/data/fs_logs}:/root/.ros/fs_logs  # planting records, geotagged
+      - ${CONFIG:-../ros2_ws/src/fs_bringup/config/robots.yaml}:/ws/install/fs_bringup/share/fs_bringup/config/robots.yaml:ro
+    command: >
+      ros2 launch fs_bringup robot.launch.py robot:=${ROBOT:-katar} ns:=${NS:-}
+      site_file:=/data/site/${SITE:-site.yaml} fleet:=${FLEET:-} fleet_manager:=${FLEET_MANAGER:-false}
+
+  sim:
+    <<: *ros
+    image: foreststark:sim
+    build: {context: .., dockerfile: docker/Dockerfile, target: sim}
+    environment:
+      DISPLAY: ${DISPLAY:-:0}
+      ROS_DOMAIN_ID: ${ROS_DOMAIN_ID:-42}
+      FASTDDS_BUILTIN_TRANSPORTS: UDPv4
+    volumes: ["/tmp/.X11-unix:/tmp/.X11-unix:rw"]
+    devices: ["/dev/dri:/dev/dri"]
+    command: ros2 launch fs_bringup ${ROBOT:-katar}.launch.py
+
+  audit:
+    image: foreststark:robot
+    profiles: [tools]
+    command: ros2 run fs_bringup physics_audit

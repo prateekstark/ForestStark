@@ -76,10 +76,10 @@ AUGER_ACTIVE = ("lowering", "boring", "retracting")
 PLUG_BOTTOM = 0.12             # plug root ball is 0.12 m long; its top ends flush with the ground
 JAW_TIP = 0.42                 # duckbill_feed_link origin to the closed jaw tip
 TAMP_RING = 0.026              # tamp_link origin to the underside of the ring
-HOPPERS = {      # amendment hoppers, kg (refilled with the plugs)
-    "katar": {"FYM": 800.0, "gypsum": 400.0, "sand": 1500.0, "hydrogel": 10.0},
-    "jaal": {"FYM": 150.0, "gypsum": 40.0, "sand": 250.0, "hydrogel": 3.0},
-    "pahadi": {"FYM": 40.0, "gypsum": 0.0, "sand": 0.0, "hydrogel": 1.5},
+HOPPERS = {      # amendment hoppers in the CAD, kg (refilled with the plugs)
+    "katar": {"FYM": 200.0, "gypsum": 150.0, "sand": 250.0, "hydrogel": 5.0},   # bins over the trailer drawbar
+    "jaal": {"FYM": 60.0, "gypsum": 20.0, "sand": 80.0, "hydrogel": 2.0},       # between rear drum and gantry
+    "pahadi": {"FYM": 25.0, "gypsum": 0.0, "sand": 0.0, "hydrogel": 1.0},       # bin on the rear module
 }
 TOOL_RANK = {"auger": 0, "pick": 1, "seedball": 2}
 READY = 0.10                   # duckbill tip and tamp ring wait this far above the ground
@@ -972,9 +972,26 @@ class PlantingHead(Node):
                 else:
                     if self.auger.get("in_pan") or smp.get("hardpan", 9.0) < reached:
                         rec.reason = f"kankar pan at {smp['hardpan'] * 100:.0f} cm bored through"
-                    pre = self.pour(m.pre_water_l, "pre_water") if smp["moisture"] < m.min_moisture else 0.0
-                    if pre:
-                        dev.append(f"soil at {smp['moisture']:.2f} moisture: pit pre-watered")
+                    pre = 0.0
+                    caved = float(self.auger.get("collapse", 0.0))
+                    if caved > 0.03:
+                        # dry sand slumped in once the flight came out: wet the wall, bore the spoil out again
+                        pre = self.pour(max(m.pre_water_l, 3.0), "pre_water")
+                        if pre:
+                            self.auger_cmd(f"wet {pre:.1f}")
+                            self.feedback(verb)
+                            if self.bore(verb, m.pit_depth) == "bored":
+                                self.feedback("retract")
+                                self.retract()
+                        left = float(self.auger.get("collapse", caved)) if pre else caved
+                        reached = max(0.0, float(self.auger.get("depth", reached)) - left)
+                        rec.hole_depth_m = reached
+                        dev.append(f"dry pit wall caved in {caved * 100:.0f} cm"
+                                   + (f"; pre-watered and re-bored, {left * 100:.0f} cm left" if pre else "; no water to re-bore"))
+                    elif smp["moisture"] < m.min_moisture:
+                        pre = self.pour(m.pre_water_l, "pre_water")
+                        if pre:
+                            dev.append(f"soil at {smp['moisture']:.2f} moisture: pit pre-watered")
                     self.backfill(m, reached, dev)
                     if m.catchment == "mound":
                         self.feedback("mound")
