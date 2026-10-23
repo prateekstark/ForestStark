@@ -1,0 +1,239 @@
+<title>ForestStark Sim Lab</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&family=Noto+Sans+Devanagari:wght@500&display=swap">
+<style>
+/* Layout: field test bench. Live 3D bay with run controls on the left, scenario knobs and telemetry on the right,
+   then a wall of live engineering diagrams and the equations each simulator integrates. */
+:root{
+  --bg:#ECEFE8; --panel:#F7F8F4; --soft:#E1E6DD; --ink:#1A231F; --muted:#56635B; --line:#C7D0C5;
+  --accent:#8F5E00; --mark:#E2A514; --leaf:#2F7542; --water:#2B6A8F; --warn:#B4600F; --bad:#B3261E; --ok:#2F7542;
+  --c4:#6E4F9E; --c5:#3F7F86; --plot:#FBFCF9; --hud:rgba(247,248,244,.92); --sky:#D6E2DF;
+  --f-display:"Barlow Condensed","Arial Narrow",sans-serif;
+  --f-body:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --f-mono:"IBM Plex Mono",ui-monospace,"SFMono-Regular",Menlo,monospace;
+  --f-deva:"Noto Sans Devanagari","Nirmala UI","Mangal",sans-serif;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#101612; --panel:#171F1A; --soft:#1E2822; --ink:#E2E9E3; --muted:#90A095; --line:#2A352E;
+    --accent:#F0B429; --mark:#E2A514; --leaf:#6DBB7E; --water:#62A6CE; --warn:#E8964A; --bad:#F2766B; --ok:#6DBB7E;
+    --c4:#B39BE0; --c5:#6FC1C9; --plot:#141B16; --hud:rgba(23,31,26,.9); --sky:#2C3B38; color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#101612; --panel:#171F1A; --soft:#1E2822; --ink:#E2E9E3; --muted:#90A095; --line:#2A352E;
+  --accent:#F0B429; --mark:#E2A514; --leaf:#6DBB7E; --water:#62A6CE; --warn:#E8964A; --bad:#F2766B; --ok:#6DBB7E;
+  --c4:#B39BE0; --c5:#6FC1C9; --plot:#141B16; --hud:rgba(23,31,26,.9); --sky:#2C3B38; color-scheme:dark;
+}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+body{background:var(--bg);color:var(--ink);font-family:var(--f-body);font-size:15px;line-height:1.55}
+.wrap{max-width:1320px;margin:0 auto;padding-block:28px 64px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+.eyebrow{font-family:var(--f-mono);font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin:0 0 8px}
+h1{font-family:var(--f-display);font-weight:600;text-transform:uppercase;font-size:clamp(34px,5.4vw,56px);line-height:.98;letter-spacing:.01em;margin:0;text-wrap:balance}
+.lede{max-width:70ch;color:var(--muted);margin:12px 0 0}
+button,select,input{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+.tabs{display:flex;gap:8px;overflow-x:auto;margin-top:24px;padding-bottom:4px}
+.tab{flex:0 0 auto;display:flex;align-items:center;gap:12px;padding:10px 16px 10px 12px;border:1px solid var(--line);background:var(--panel);border-radius:4px;cursor:pointer;text-align:left}
+.tab .k{font-family:var(--f-display);font-weight:700;font-size:30px;line-height:1;color:var(--muted);width:20px;text-align:center}
+.tab .t{display:flex;flex-direction:column;line-height:1.25}
+.tab .n{font-weight:600;font-size:14px}
+.tab .m{font-size:12px;color:var(--muted)}
+.tab:hover{border-color:var(--muted)}
+.tab[aria-selected="true"]{border-color:var(--ink);box-shadow:inset 0 -3px 0 var(--mark)}
+.tab[aria-selected="true"] .k{color:var(--accent)}
+
+.stage{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,380px);gap:20px;margin-top:14px;align-items:start}
+@media (max-width:980px){.stage{grid-template-columns:minmax(0,1fr)}}
+.bay{min-width:0}
+.viewport{position:relative;width:100%;max-width:100%;aspect-ratio:16/10;background:var(--sky);border:1px solid var(--line);border-radius:4px;overflow:hidden}
+@media (max-width:600px){.viewport{aspect-ratio:4/5}}
+.viewport canvas{display:block;width:100%;height:100%}
+.viewport canvas.gl{cursor:grab}
+.viewport canvas.gl:active{cursor:grabbing}
+.viewport canvas.flat{position:absolute;inset:0;background:var(--plot)}
+.hud{position:absolute;left:10px;top:10px;background:var(--hud);border:1px solid var(--line);border-radius:3px;padding:8px 11px;font-family:var(--f-mono);font-size:12px;line-height:1.5;max-width:calc(100% - 20px);pointer-events:none}
+.hud .ttl{font-weight:500;margin-bottom:3px}
+.hud dl{display:grid;grid-template-columns:auto auto;gap:0 14px;margin:0}
+.hud dt{color:var(--muted)}
+.hud dd{margin:0;font-variant-numeric:tabular-nums;text-align:right}
+@media (max-width:600px){.hud{font-size:11px;padding:6px 8px}}
+.banner{position:absolute;left:50%;bottom:38px;transform:translateX(-50%);background:var(--ink);color:var(--bg);font-family:var(--f-mono);font-size:12.5px;padding:6px 12px;border-radius:3px;max-width:calc(100% - 24px);text-align:center;pointer-events:none;transition:opacity .4s}
+.banner.bad{background:var(--bad);color:#fff}
+.banner.warn{background:var(--warn);color:#fff}
+.hint{position:absolute;right:10px;bottom:8px;font-family:var(--f-mono);font-size:11px;color:var(--muted);background:var(--hud);padding:2px 7px;border-radius:3px;pointer-events:none}
+.vp-msg{position:absolute;inset:auto 16px 50% 16px;transform:translateY(50%);margin:0 auto;text-align:center;max-width:56ch;color:var(--muted);font-family:var(--f-mono);font-size:13px}
+
+.controls{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px;align-items:center}
+.btn{border:1px solid var(--line);background:var(--panel);padding:7px 13px;border-radius:4px;font-family:var(--f-mono);font-size:13px;cursor:pointer}
+.btn:hover{border-color:var(--muted)}
+.btn[aria-pressed="true"]{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+.btn.primary{background:var(--mark);border-color:var(--mark);color:#1A231F}
+.seg{display:inline-flex}
+.seg .btn{border-radius:0;margin-left:-1px}
+.seg .btn:first-child{border-radius:4px 0 0 4px;margin-left:0}
+.seg .btn:last-child{border-radius:0 4px 4px 0}
+.progress{flex:1 1 160px;min-width:120px;height:6px;background:var(--soft);border-radius:3px;overflow:hidden}
+.progress i{display:block;height:100%;width:0;background:var(--leaf);transition:width .2s}
+
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:4px;min-width:0}
+.panel>section{padding:14px 16px;border-top:1px solid var(--line)}
+.panel>section:first-child{border-top:0}
+.ph{display:flex;align-items:baseline;justify-content:space-between;gap:8px;margin:0 0 10px}
+.ph h2{font-family:var(--f-display);font-weight:600;text-transform:uppercase;font-size:21px;letter-spacing:.01em;margin:0;line-height:1}
+.ph span{font-family:var(--f-mono);font-size:11px;color:var(--muted)}
+.robot-head{display:flex;gap:12px;align-items:flex-start}
+.big-k{font-family:var(--f-display);font-weight:700;font-size:58px;line-height:.8;color:var(--accent)}
+.robot-head h2{font-family:var(--f-display);font-weight:600;text-transform:uppercase;font-size:30px;line-height:1;margin:0}
+.deva{font-family:var(--f-deva);font-size:15px;color:var(--muted);margin-left:6px;text-transform:none;font-weight:500}
+.mode{font-family:var(--f-mono);font-size:11.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);margin-top:6px}
+.robot-desc{margin:10px 0 0;font-size:14px;color:var(--muted)}
+
+.params{display:grid;gap:12px}
+.prm label,.prm .lbl{display:flex;justify-content:space-between;gap:10px;font-size:13px;margin-bottom:4px}
+.prm output{font-family:var(--f-mono);font-size:12.5px;font-variant-numeric:tabular-nums;color:var(--accent)}
+.prm input[type=range]{width:100%;accent-color:var(--accent);margin:0}
+.prm .opts{display:flex;flex-wrap:wrap;gap:4px}
+.prm .opts button{border:1px solid var(--line);background:var(--bg);border-radius:3px;padding:4px 9px;font-size:12.5px;cursor:pointer}
+.prm .opts button[aria-pressed="true"]{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+.prm .help{font-size:12px;color:var(--muted);margin-top:3px;line-height:1.4}
+
+.tele{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:5px 12px;margin:0;font-size:13.5px}
+.tele dt{color:var(--muted)}
+.tele dd{margin:0;text-align:right;font-family:var(--f-mono);font-size:13px;font-variant-numeric:tabular-nums;white-space:nowrap}
+.tele .grp{grid-column:1/-1;font-family:var(--f-mono);font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);border-top:1px solid var(--line);padding-top:8px;margin-top:4px}
+.tele .grp:first-child{border-top:0;padding-top:0;margin-top:0}
+.chip{display:inline-block;font-size:10.5px;letter-spacing:.04em;text-transform:uppercase;padding:1px 6px;border-radius:2px;margin-left:6px;vertical-align:1px;border:1px solid currentColor}
+.chip.ok{color:var(--ok)} .chip.warn{color:var(--warn)} .chip.bad{color:var(--bad);background:color-mix(in srgb,var(--bad) 12%,transparent)}
+.log{list-style:none;margin:0;padding:0;display:grid;gap:4px;font-family:var(--f-mono);font-size:12px;max-height:168px;overflow:auto}
+.log li{display:grid;grid-template-columns:52px minmax(0,1fr);gap:8px;line-height:1.4}
+.log time{color:var(--muted)}
+.log .bad{color:var(--bad)} .log .warn{color:var(--warn)} .log .ok{color:var(--ok)}
+.log .empty{color:var(--muted);display:block}
+
+section.block{margin-top:44px}
+h3{font-family:var(--f-display);font-weight:600;text-transform:uppercase;font-size:28px;line-height:1.05;margin:0 0 6px;letter-spacing:.01em;text-wrap:balance}
+.sub{color:var(--muted);max-width:72ch;margin:0 0 18px}
+.figs{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}
+@media (max-width:860px){.figs{grid-template-columns:minmax(0,1fr)}}
+.fig{background:var(--panel);border:1px solid var(--line);border-radius:4px;padding:12px 14px 12px;min-width:0;display:flex;flex-direction:column;gap:8px}
+.fig.wide{grid-column:1/-1}
+.fig header{display:flex;justify-content:space-between;align-items:baseline;gap:10px;flex-wrap:wrap}
+.fig h4{font-family:var(--f-display);font-weight:600;text-transform:uppercase;font-size:19px;margin:0;letter-spacing:.01em;line-height:1.1}
+.fig .tag{font-family:var(--f-mono);font-size:11px;color:var(--muted)}
+.fig canvas{width:100%;aspect-ratio:16/9;display:block;background:var(--plot);border:1px solid var(--line);border-radius:3px}
+.fig.wide canvas{aspect-ratio:21/8}
+@media (max-width:600px){.fig.wide canvas{aspect-ratio:4/3}.fig canvas{aspect-ratio:4/3}}
+.fig p{margin:0;font-size:13px;color:var(--muted);max-width:80ch}
+.fig .row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+
+.model{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}
+@media (max-width:860px){.model{grid-template-columns:minmax(0,1fr)}}
+.eq{background:var(--panel);border:1px solid var(--line);border-radius:4px;padding:14px 16px;min-width:0}
+.eq h5{font-family:var(--f-mono);font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin:0 0 8px;font-weight:500}
+.eq .f{font-family:var(--f-mono);font-size:13.5px;background:var(--soft);border-radius:3px;padding:8px 10px;overflow-x:auto;white-space:nowrap;margin:6px 0}
+.eq .f var{font-style:italic;font-family:Georgia,"Times New Roman",serif;font-size:15px}
+.eq p{margin:6px 0 0;font-size:13.5px;color:var(--muted)}
+.eq table{border-collapse:collapse;width:100%;font-size:12.5px;margin-top:6px}
+.eq th,.eq td{text-align:left;padding:4px 8px 4px 0;border-bottom:1px solid var(--line);font-variant-numeric:tabular-nums;vertical-align:top}
+.eq th{font-family:var(--f-mono);font-size:10.5px;color:var(--muted);font-weight:500;text-transform:uppercase;letter-spacing:.05em}
+.tw{overflow-x:auto}
+.foot{margin-top:40px;font-size:13px;color:var(--muted);max-width:80ch}
+@media (prefers-reduced-motion: reduce){.banner,.progress i{transition:none}}
+</style>
+
+<div class="wrap">
+  <header>
+    <p class="eyebrow">ForestStark · robot simulation lab · v1.0</p>
+    <h1>ForestStark Sim Lab</h1>
+    <p class="lede">Each of the three planting robots runs in its own physics environment. Change the site, the soil and the machine. The simulator then shows where the time, energy and tip-over risk come from, plant by plant.</p>
+  </header>
+
+  <div class="tabs" role="tablist" aria-label="Robot simulators">
+    <button class="tab" role="tab" id="tab-A" data-k="A" aria-selected="true"><span class="k">A</span><span class="t"><span class="n">Katar</span><span class="m">Tractor trailer · roadside row</span></span></button>
+    <button class="tab" role="tab" id="tab-B" data-k="B" aria-selected="false"><span class="k">B</span><span class="t"><span class="n">Jaal</span><span class="m">Autonomous fleet · 1 ha grid</span></span></button>
+    <button class="tab" role="tab" id="tab-C" data-k="C" aria-selected="false"><span class="k">C</span><span class="t"><span class="n">Pahadi</span><span class="m">Tracked · contour rows on a slope</span></span></button>
+  </div>
+
+  <div class="stage">
+    <div class="bay">
+      <div class="viewport" id="viewport">
+        <div class="hud" id="hud"></div>
+        <div class="banner" id="banner" hidden></div>
+        <p class="vp-msg" id="vp-msg">Loading the simulator…</p>
+        <div class="hint" id="hint">Drag to orbit · scroll or pinch to zoom · right-drag to pan</div>
+      </div>
+      <div class="controls">
+        <button class="btn" id="play" aria-pressed="false">Pause</button>
+        <span class="seg" id="speeds" role="group" aria-label="Simulation speed"></span>
+        <button class="btn" id="follow" aria-pressed="true">Follow robot</button>
+        <button class="btn" id="restart">Restart run</button>
+        <span class="progress" title="Run progress"><i id="prog"></i></span>
+      </div>
+    </div>
+    <aside class="panel" id="panel">
+      <section id="robot-card"></section>
+      <section>
+        <div class="ph"><h2>Scenario</h2><span>changes restart the run</span></div>
+        <div class="params" id="params"></div>
+      </section>
+      <section>
+        <div class="ph"><h2>Telemetry</h2><span id="simclock">0:00</span></div>
+        <dl class="tele" id="tele"></dl>
+      </section>
+      <section>
+        <div class="ph"><h2>Event log</h2><span id="evcount"></span></div>
+        <ul class="log" id="log"></ul>
+      </section>
+    </aside>
+  </div>
+
+  <section class="block">
+    <h3>Live diagrams</h3>
+    <p class="sub" id="figs-sub">Every diagram is drawn from the running physics state, so it changes with every scenario setting.</p>
+    <div class="figs" id="figs"></div>
+  </section>
+
+  <section class="block">
+    <h3>Physics in this model</h3>
+    <p class="sub" id="model-sub">These are the equations the simulator integrates at each time step, with the constants it uses.</p>
+    <div class="model" id="model"></div>
+  </section>
+
+  <section class="block">
+    <h3>Same robots in ROS 2 and Gazebo</h3>
+    <p class="sub">This page is the quick, shareable twin. The full software runs in the <code>ros2_ws</code> workspace on ROS 2 Lyrical and Gazebo Jetty: custom Gazebo systems for soil dynamics, and the autonomy stack that would run on the machines.</p>
+    <div class="model">
+      <div class="eq"><h5>Gazebo soil systems (fs_gazebo, C++)</h5>
+        <p><b>fs::Terramechanics</b>: Bekker sinkage and compaction resistance, Janosi–Hanamoto slip traction and lateral shear at every wheel or track segment, with a bristle state so machines can stand on slopes. <b>fs::AugerSoil</b>: power- and thrust-limited cutting through the site soil map, refusal on rock, a percussive-pick mode, and the reaction carried into the robot. <b>fs::SwerveDrive</b> for Jaal's four steered wheels.</p></div>
+      <div class="eq"><h5>Autonomy (fs_autonomy, Python)</h5>
+        <p>EKF localization (GNSS with tilt-compensated lever arm, odometry, IMU), the planting-head action server, Katar's spacing trigger and boom control, Jaal's fleet manager, navigator and tender protocol, Pahadi's contour planner, articulated steering, stability and traction monitors, and CSV/GeoJSON planting audit logs.</p></div>
+      <div class="eq"><h5>Run</h5>
+        <div class="f">ros2 launch fs_bringup katar.launch.py</div>
+        <div class="f">ros2 launch fs_bringup jaal.launch.py robots:=3 field:=demo</div>
+        <div class="f">ros2 launch fs_bringup pahadi.launch.py slope:=18 side:=downhill</div>
+        <p>Add <code>headless:=true rviz:=false</code> to run without windows. Logs go to <code>~/.ros/fs_logs/</code>.</p></div>
+      <div class="eq"><h5>Measured in the Gazebo runs</h5>
+        <table><thead><tr><th></th><th>Katar</th><th>Jaal ×3</th><th>Pahadi</th></tr></thead><tbody>
+          <tr><td>Placement error (mean)</td><td>3.5 cm</td><td>3.6 cm</td><td>2.4 cm</td></tr>
+          <tr><td>Time at each spot</td><td>12.5 s</td><td>13.3 s</td><td>≈ 111 s</td></tr>
+          <tr><td>Boring energy per hole</td><td>35 kJ</td><td>18.5 kJ</td><td>≈ 100 kJ</td></tr>
+          <tr><td>Throughput</td><td>≈ 205 /h</td><td>≈ 575 /h fleet</td><td>≈ 32 /h</td></tr>
+        </tbody></table>
+        <p>Pahadi's 2 kW auger is thrust- and power-limited in dry laterite; raise the auger power above to see what a bigger head buys.</p></div>
+    </div>
+  </section>
+
+  <p class="foot">Physics is first-order and meant for comparing designs, not for certifying a machine. Soil constants come from published Bekker tables (Wong, <i>Theory of Ground Vehicles</i>). Boring energies, power figures and masses are engineering estimates for these concepts. Every run is seeded, so the same settings give the same result.</p>
+</div>
+
+<script src="js/core.js"></script>
+<script src="js/head.js"></script>
+<script src="js/katar.js"></script>
+<script src="js/jaal.js"></script>
+<script src="js/pahadi.js"></script>
+<script src="js/app.js"></script>

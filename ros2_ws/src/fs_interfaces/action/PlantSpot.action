@@ -1,0 +1,13 @@
+# Plant one spot with the planting head.
+uint32 spot_id
+geometry_msgs/Point target     # map frame
+string tool                    # auger | pick | seedball | auto
+bool track_ground              # keep the tool over target while the base moves (Katar on-the-move)
+bool half_moon                 # dig a half-moon catchment downhill afterwards (Pahadi)
+---
+PlantRecord record
+bool success
+---
+string phase
+float64 auger_depth_m
+float64 elapsed_s

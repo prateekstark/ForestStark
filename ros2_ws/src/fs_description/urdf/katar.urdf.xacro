@@ -1,0 +1,165 @@
+<?xml version="1.0"?>
+<!--
+  A · Katar — 40 hp tractor towing a planting trailer (tandem axle) with a side boom.
+  Frames: base_link at the tractor rear-axle centre, 0.72 m above ground (REP-103: x forward, y left).
+  Hitch: revolute about z, 1.15 m behind the rear axle. Boom: sled slides along the trailer
+  (sled_joint, along-track correction and on-the-move compensation), carriage slides across it
+  (carriage_joint: reach 1.5-3.5 m from the trailer centreline), auger feeds down.
+
+  xacro katar.urdf.xacro ns:=katar soil_map:=/abs/roadside.soilmap
+-->
+<robot name="katar" xmlns:xacro="http://www.ros.org/wiki/xacro">
+  <xacro:arg name="ns" default="katar"/>
+  <xacro:arg name="soil_map" default=""/>
+  <xacro:arg name="gnss_sigma" default="0.02"/>
+  <xacro:property name="ns" value="$(arg ns)"/>
+  <xacro:include filename="$(find fs_description)/urdf/common.xacro"/>
+
+  <!-- ===================== tractor ===================== -->
+  <link name="base_link">
+    <xacro:box_inertial m="2200" x="3.2" y="1.6" z="1.4"><origin xyz="0.9 0 0.15"/></xacro:box_inertial>
+    <xacro:cbox xyz="1.3 0 0.12" size="3.0 0.8 0.75"/>
+    <xacro:vbox xyz="1.05 0 -0.08" size="2.5 0.6 0.3" material="fs_graphite"/>
+    <xacro:vbox xyz="1.88 0 0.40" size="1.55 0.78 0.7" material="fs_yellow"/>
+    <xacro:vbox xyz="2.67 0 0.36" size="0.06 0.68 0.58" material="fs_graphite"/>
+    <xacro:vcyl xyz="2.25 0.26 1.13" r="0.05" l="0.8" material="fs_graphite"/>
+    <xacro:vbox xyz="0 0.8 0.78" size="1.15 0.5 0.06" material="fs_yellow"/>
+    <xacro:vbox xyz="0 -0.8 0.78" size="1.15 0.5 0.06" material="fs_yellow"/>
+    <xacro:vbox xyz="0 0 0.40" size="1.25 1.2 0.08" material="fs_graphite"/>
+    <xacro:vbox xyz="0.02 0 1.92" size="1.35 1.3 0.08" material="fs_yellow"/>
+    <xacro:vbox xyz="-0.55 0.57 1.17" size="0.06 0.06 1.46" material="fs_graphite"/>
+    <xacro:vbox xyz="-0.55 -0.57 1.17" size="0.06 0.06 1.46" material="fs_graphite"/>
+    <xacro:vbox xyz="0.6 0.57 1.17" size="0.06 0.06 1.46" material="fs_graphite"/>
+    <xacro:vbox xyz="0.6 -0.57 1.17" size="0.06 0.06 1.46" material="fs_graphite"/>
+    <xacro:vbox xyz="0.6 0 1.36" size="0.02 1.08 1.0" material="fs_glass"/>
+    <xacro:vcyl xyz="0.3 0.42 2.02" r="0.07" l="0.12" material="fs_orange"/>
+    <xacro:vbox xyz="-0.85 0 0.0" size="0.5 0.14 0.12" material="fs_steel"/>
+  </link>
+  <xacro:person parent="base_link" name="driver" xyz="-0.12 0 0.44"/>
+
+  <xacro:wheel name="rear_left_wheel" parent="base_link" xyz="0 0.8 0" r="0.72" w="0.4" m="120"/>
+  <xacro:wheel name="rear_right_wheel" parent="base_link" xyz="0 -0.8 0" r="0.72" w="0.4" m="120"/>
+  <xacro:macro name="steered_front" params="side y">
+    <joint name="front_${side}_steer_joint" type="revolute">
+      <parent link="base_link"/><child link="front_${side}_steer_link"/>
+      <origin xyz="2.05 ${y} -0.30"/><axis xyz="0 0 1"/>
+      <limit lower="-0.6" upper="0.6" effort="4000" velocity="1.0"/>
+    </joint>
+    <link name="front_${side}_steer_link">
+      <inertial><mass value="10"/><inertia ixx="0.1" iyy="0.1" izz="0.1" ixy="0" ixz="0" iyz="0"/></inertial>
+    </link>
+    <xacro:wheel name="front_${side}_wheel" parent="front_${side}_steer_link" xyz="0 0 0" r="0.42" w="0.24" m="40"/>
+  </xacro:macro>
+  <xacro:steered_front side="left" y="0.68"/>
+  <xacro:steered_front side="right" y="-0.68"/>
+
+  <xacro:gnss ns="${ns}" parent="base_link" xyz="0.1 0 2.0" sigma="$(arg gnss_sigma)"/>
+  <xacro:imu ns="${ns}" name="imu" parent="base_link" xyz="0.3 0 0.2"/>
+
+  <!-- ===================== trailer ===================== -->
+  <joint name="hitch_joint" type="revolute">
+    <parent link="base_link"/><child link="trailer_link"/>
+    <origin xyz="-1.15 0 -0.22"/><axis xyz="0 0 1"/>
+    <limit lower="-1.2" upper="1.2" effort="1000" velocity="2"/><dynamics damping="20"/>
+  </joint>
+  <link name="trailer_link">
+    <!-- 1,400 kg frame, half-full 1,000 L tank, 24 trays, racks, loader -->
+    <xacro:box_inertial m="2400" x="4.0" y="2.0" z="1.5"><origin xyz="-2.4 0 0.75"/></xacro:box_inertial>
+    <xacro:cbox xyz="-2.7 0 0.36" size="3.7 2.0 0.3"/>
+    <xacro:cbox xyz="-1.6 0 1.0" size="1.2 1.1 1.1"/>
+    <xacro:vbox xyz="-0.45 0 0" size="1.0 0.1 0.1" material="fs_steel"/>
+    <xacro:vbox xyz="-2.7 0 0.36" size="3.7 2.0 0.14" material="fs_graphite"/>
+    <xacro:vbox xyz="-2.7 0.98 0.49" size="3.7 0.04 0.12" material="fs_yellow"/>
+    <xacro:vbox xyz="-2.7 -0.98 0.49" size="3.7 0.04 0.12" material="fs_yellow"/>
+    <xacro:vcyl xyz="-1.6 0 1.0" r="0.55" l="1.2" rpy="0 ${PI/2} 0" material="fs_blue"/>
+    <xacro:vcyl xyz="-1.6 0 1.57" r="0.12" l="0.08" material="fs_steel"/>
+    <xacro:macro name="rack" params="y">
+      <xacro:vbox xyz="-3.4 ${y} 0.45" size="2.14 0.46 0.03" material="fs_steel"/>
+      <xacro:vbox xyz="-3.4 ${y} 0.50" size="2.1 0.4 0.06" material="fs_leaf"/>
+      <xacro:vbox xyz="-3.4 ${y} 0.97" size="2.14 0.46 0.03" material="fs_steel"/>
+      <xacro:vbox xyz="-3.4 ${y} 1.02" size="2.1 0.4 0.06" material="fs_leaf"/>
+      <xacro:vbox xyz="-3.4 ${y} 1.49" size="2.14 0.46 0.03" material="fs_steel"/>
+      <xacro:vbox xyz="-3.4 ${y} 1.54" size="2.1 0.4 0.06" material="fs_leaf"/>
+      <xacro:vbox xyz="-2.33 ${y} 1.36" size="0.05 0.05 1.86" material="fs_steel"/>
+      <xacro:vbox xyz="-4.47 ${y} 1.36" size="0.05 0.05 1.86" material="fs_steel"/>
+    </xacro:macro>
+    <xacro:rack y="0.68"/>
+    <xacro:rack y="-0.68"/>
+    <xacro:vbox xyz="-3.4 0 2.3" size="2.2 2.0 0.02" material="fs_shade"/>
+    <!-- boom rail on the left side -->
+    <xacro:vbox xyz="-1.6 1.0 0.45" size="2.8 0.08 0.08" material="fs_steel"/>
+  </link>
+  <xacro:person parent="trailer_link" name="loader" xyz="-3.1 0 0.43" rpy="0 0 ${PI/2}" cloth="fs_orange"/>
+  <xacro:wheel name="trailer_fl_wheel" parent="trailer_link" xyz="-3.1 0.93 -0.08" r="0.42" w="0.26" m="30" rim="fs_graphite"/>
+  <xacro:wheel name="trailer_fr_wheel" parent="trailer_link" xyz="-3.1 -0.93 -0.08" r="0.42" w="0.26" m="30" rim="fs_graphite"/>
+  <xacro:wheel name="trailer_rl_wheel" parent="trailer_link" xyz="-3.95 0.93 -0.08" r="0.42" w="0.26" m="30" rim="fs_graphite"/>
+  <xacro:wheel name="trailer_rr_wheel" parent="trailer_link" xyz="-3.95 -0.93 -0.08" r="0.42" w="0.26" m="30" rim="fs_graphite"/>
+
+  <!-- ===================== boom ===================== -->
+  <joint name="sled_joint" type="prismatic">
+    <parent link="trailer_link"/><child link="sled_link"/>
+    <origin xyz="-0.85 1.0 0.45"/><axis xyz="1 0 0"/>
+    <limit lower="-1.8" upper="0.6" effort="20000" velocity="1.0"/><dynamics damping="200"/>
+  </joint>
+  <link name="sled_link">
+    <xacro:box_inertial m="150" x="0.3" y="2.7" z="1.2"><origin xyz="0 0.8 0.8"/></xacro:box_inertial>
+    <xacro:vbox xyz="0 0 0.55" size="0.12 0.12 1.15" material="fs_yellow"/>
+    <xacro:vbox xyz="0 1.35 1.07" size="0.12 2.75 0.12" material="fs_yellow"/>
+    <xacro:vbox xyz="0 0.45 0.8" size="0.06 0.95 0.06" rpy="0.71 0 0" material="fs_steel"/>
+  </link>
+  <joint name="carriage_joint" type="prismatic">
+    <parent link="sled_link"/><child link="carriage_link"/>
+    <origin xyz="0 0 1.0"/><axis xyz="0 1 0"/>
+    <limit lower="0.5" upper="2.5" effort="20000" velocity="0.8"/><dynamics damping="200"/>
+  </joint>
+  <link name="carriage_link">
+    <xacro:box_inertial m="60" x="0.32" y="0.32" z="0.3"><origin xyz="0 0 0"/></xacro:box_inertial>
+    <xacro:vbox xyz="0 0 0" size="0.32 0.32 0.3" material="fs_yellow"/>
+    <xacro:vcyl xyz="0 0 0.25" r="0.09" l="0.2" material="fs_graphite"/>
+    <xacro:vbox xyz="0.17 0 -0.5" size="0.04 0.2 0.8" material="fs_graphite"/>
+  </link>
+  <xacro:auger_head parent="carriage_link" xyz="0 0 -0.25" length="0.95" diameter="0.15" stroke="1.3"/>
+
+  <!-- ===================== Gazebo systems ===================== -->
+  <gazebo>
+    <plugin filename="gz-sim-ackermann-steering-system" name="gz::sim::systems::AckermannSteering">
+      <left_joint>rear_left_wheel_joint</left_joint>
+      <right_joint>rear_right_wheel_joint</right_joint>
+      <left_steering_joint>front_left_steer_joint</left_steering_joint>
+      <right_steering_joint>front_right_steer_joint</right_steering_joint>
+      <kingpin_width>1.36</kingpin_width><steering_limit>0.55</steering_limit>
+      <wheel_base>2.05</wheel_base><wheel_separation>1.6</wheel_separation><wheel_radius>0.72</wheel_radius>
+      <min_velocity>-1.5</min_velocity><max_velocity>2.5</max_velocity>
+      <min_acceleration>-1.2</min_acceleration><max_acceleration>0.5</max_acceleration>
+      <topic>/model/${ns}/cmd_vel</topic>
+      <odom_topic>/model/${ns}/odometry</odom_topic>
+      <tf_topic>/model/${ns}/odometry_tf</tf_topic>
+      <frame_id>${ns}/odom</frame_id><child_frame_id>${ns}/base_link</child_frame_id>
+      <odom_publish_frequency>30</odom_publish_frequency>
+    </plugin>
+    <xacro:common_plugins ns="${ns}"/>
+    <xacro:pos_controller ns="${ns}" joint="sled_joint" p="2.5" vmax="0.9" init="0.0"/>
+    <xacro:pos_controller ns="${ns}" joint="carriage_joint" p="2.5" vmax="0.6" init="1.5"/>
+    <plugin filename="fs_terramechanics_system" name="fs::Terramechanics">
+      <soil_map>$(arg soil_map)</soil_map>
+      <topic>/model/${ns}/terramechanics</topic>
+      <xacro:tm_wheel link="rear_left_wheel_link" r="0.72" b="0.40" l="0.36"/>
+      <xacro:tm_wheel link="rear_right_wheel_link" r="0.72" b="0.40" l="0.36"/>
+      <xacro:tm_wheel link="front_left_wheel_link" r="0.42" b="0.24" l="0.2"/>
+      <xacro:tm_wheel link="front_right_wheel_link" r="0.42" b="0.24" l="0.2"/>
+      <xacro:tm_wheel link="trailer_fl_wheel_link" r="0.42" b="0.26" l="0.2"/>
+      <xacro:tm_wheel link="trailer_fr_wheel_link" r="0.42" b="0.26" l="0.2"/>
+      <xacro:tm_wheel link="trailer_rl_wheel_link" r="0.42" b="0.26" l="0.2"/>
+      <xacro:tm_wheel link="trailer_rr_wheel_link" r="0.42" b="0.26" l="0.2"/>
+    </plugin>
+    <plugin filename="fs_auger_soil_system" name="fs::AugerSoil">
+      <soil_map>$(arg soil_map)</soil_map>
+      <feed_joint>auger_feed_joint</feed_joint><spin_joint>auger_spin_joint</spin_joint>
+      <tip_link>auger_link</tip_link><tip_offset>0 0 -0.95</tip_offset><tool_axis>0 0 -1</tool_axis>
+      <diameter>0.15</diameter><max_power>8000</max_power><efficiency>0.75</efficiency>
+      <max_thrust>8000</max_thrust><max_feed>0.15</max_feed><rpm>90</rpm><max_stroke>1.3</max_stroke>
+      <free_speed>0.5</free_speed><retract_speed>0.6</retract_speed>
+      <cmd_topic>/model/${ns}/auger/cmd</cmd_topic><status_topic>/model/${ns}/auger/status</status_topic>
+    </plugin>
+  </gazebo>
+</robot>

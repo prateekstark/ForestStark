@@ -1,0 +1,410 @@
+Panels:
+- Class: rviz_common/Displays
+  Name: Displays
+  Help Height: 0
+- Class: rviz_common/Views
+  Name: Views
+- Class: rviz_common/Time
+  Name: Time
+Visualization Manager:
+  Class: ''
+  Displays:
+  - Class: rviz_default_plugins/Grid
+    Enabled: true
+    Name: Grid
+    Cell Size: 1
+    Plane Cell Count: 120
+    Color: 160; 160; 164
+    Alpha: 0.3
+    Reference Frame: <Fixed Frame>
+    Value: true
+  - Class: rviz_default_plugins/MarkerArray
+    Enabled: true
+    Name: Site survey
+    Namespaces: {}
+    Topic:
+      Depth: 5
+      Durability Policy: Transient Local
+      History Policy: Keep Last
+      Reliability Policy: Reliable
+      Value: /viz/site
+    Value: true
+  - Class: rviz_default_plugins/MarkerArray
+    Enabled: true
+    Name: Mission
+    Namespaces: {}
+    Topic:
+      Depth: 5
+      Durability Policy: Transient Local
+      History Policy: Keep Last
+      Reliability Policy: Reliable
+      Value: /viz/mission
+    Value: true
+  - Class: rviz_default_plugins/MarkerArray
+    Enabled: true
+    Name: Planted
+    Namespaces: {}
+    Topic:
+      Depth: 5
+      Durability Policy: Volatile
+      History Policy: Keep Last
+      Reliability Policy: Reliable
+      Value: /viz/plants
+    Value: true
+  - Class: rviz_default_plugins/MarkerArray
+    Enabled: true
+    Name: Stability
+    Namespaces: {}
+    Topic:
+      Depth: 5
+      Durability Policy: Volatile
+      History Policy: Keep Last
+      Reliability Policy: Reliable
+      Value: /viz/stability
+    Value: true
+  - Class: rviz_default_plugins/RobotModel
+    Enabled: true
+    Name: jaal_1
+    Alpha: 1
+    Description Source: Topic
+    Description Topic:
+      Depth: 5
+      Durability Policy: Transient Local
+      History Policy: Keep Last
+      Reliability Policy: Reliable
+      Value: /jaal_1/robot_description
+    TF Prefix: jaal_1
+    Visual Enabled: true
+    Collision Enabled: false
+    Value: true
+  - Class: rviz_default_plugins/Odometry
+    Enabled: true
+    Name: jaal_1 estimate
+    Topic:
+      Depth: 5
+      Durability Policy: Volatile
+      History Policy: Keep Last
+      Reliability Policy: Reliable
+      Value: /jaal_1/localization/odom
+    Keep: 200
+    Position Tolerance: 0.3
+    Angle Tolerance: 0.5
+    Shape:
+      Value: Arrow
+      Color: 227; 165; 20
+      Alpha: 1
+      Shaft Length: 0.8
+      Shaft Radius: 0.05
+      Head Length: 0.3
+      Head Radius: 0.12
+    Covariance:
+      Value: false
+    Value: true
+  - Class: rviz_default_plugins/LaserScan
+    Enabled: true
+    Name: jaal_1 lidar
+    Topic:
+      Depth: 5
+      Durability Policy: Volatile
+      History Policy: Keep Last
+      Reliability Policy: Best Effort
+      Value: /jaal_1/scan
+    Size (m): 0.06
+    Style: Flat Squares
+    Color Transformer: FlatColor
+    Color: 255; 85; 0
+    Value: true
+  - Class: rviz_default_plugins/RobotModel
+    Enabled: true
+    Name: jaal_2
+    Alpha: 1
+    Description Source: Topic
+    Description Topic:
+      Depth: 5
+      Durability Policy: Transient Local
+      History Policy: Keep Last
+      Reliability Policy: Reliable
+      Value: /jaal_2/robot_description
+    TF Prefix: jaal_2
+    Visual Enabled: true
+    Collision Enabled: false
+    Value: true
+  - Class: rviz_default_plugins/Odometry
+    Enabled: true
+    Name: jaal_2 estimate
+    Topic:
+      Depth: 5
+      Durability Policy: Volatile
+      History Policy: Keep Last
+      Reliability Policy: Reliable
+      Value: /jaal_2/localization/odom
+    Keep: 200
+    Position Tolerance: 0.3
+    Angle Tolerance: 0.5
+    Shape:
+      Value: Arrow
+      Color: 47; 117; 66
+      Alpha: 1
+      Shaft Length: 0.8
+      Shaft Radius: 0.05
+      Head Length: 0.3
+      Head Radius: 0.12
+    Covariance:
+      Value: false
+    Value: true
+  - Class: rviz_default_plugins/LaserScan
+    Enabled: true
+    Name: jaal_2 lidar
+    Topic:
+      Depth: 5
+      Durability Policy: Volatile
+      History Policy: Keep Last
+      Reliability Policy: Best Effort
+      Value: /jaal_2/scan
+    Size (m): 0.06
+    Style: Flat Squares
+    Color Transformer: FlatColor
+    Color: 255; 85; 0
+    Value: true
+  - Class: rviz_default_plugins/RobotModel
+    Enabled: true
+    Name: jaal_3
+    Alpha: 1
+    Description Source: Topic
+    Description Topic:
+      Depth: 5
+      Durability Policy: Transient Local
+      History Policy: Keep Last
+      Reliability Policy: Reliable
+      Value: /jaal_3/robot_description
+    TF Prefix: jaal_3
+    Visual Enabled: true
+    Collision Enabled: false
+    Value: true
+  - Class: rviz_default_plugins/Odometry
+    Enabled: true
+    Name: jaal_3 estimate
+    Topic:
+      Depth: 5
+      Durability Policy: Volatile
+      History Policy: Keep Last
+      Reliability Policy: Reliable
+      Value: /jaal_3/localization/odom
+    Keep: 200
+    Position Tolerance: 0.3
+    Angle Tolerance: 0.5
+    Shape:
+      Value: Arrow
+      Color: 43; 106; 143
+      Alpha: 1
+      Shaft Length: 0.8
+      Shaft Radius: 0.05
+      Head Length: 0.3
+      Head Radius: 0.12
+    Covariance:
+      Value: false
+    Value: true
+  - Class: rviz_default_plugins/LaserScan
+    Enabled: true
+    Name: jaal_3 lidar
+    Topic:
+      Depth: 5
+      Durability Policy: Volatile
+      History Policy: Keep Last
+      Reliability Policy: Best Effort
+      Value: /jaal_3/scan
+    Size (m): 0.06
+    Style: Flat Squares
+    Color Transformer: FlatColor
+    Color: 255; 85; 0
+    Value: true
+  - Class: rviz_default_plugins/RobotModel
+    Enabled: true
+    Name: jaal_4
+    Alpha: 1
+    Description Source: Topic
+    Description Topic:
+      Depth: 5
+      Durability Policy: Transient Local
+      History Policy: Keep Last
+      Reliability Policy: Reliable
+      Value: /jaal_4/robot_description
+    TF Prefix: jaal_4
+    Visual Enabled: true
+    Collision Enabled: false
+    Value: true
+  - Class: rviz_default_plugins/Odometry
+    Enabled: true
+    Name: jaal_4 estimate
+    Topic:
+      Depth: 5
+      Durability Policy: Volatile
+      History Policy: Keep Last
+      Reliability Policy: Reliable
+      Value: /jaal_4/localization/odom
+    Keep: 200
+    Position Tolerance: 0.3
+    Angle Tolerance: 0.5
+    Shape:
+      Value: Arrow
+      Color: 160; 68; 26
+      Alpha: 1
+      Shaft Length: 0.8
+      Shaft Radius: 0.05
+      Head Length: 0.3
+      Head Radius: 0.12
+    Covariance:
+      Value: false
+    Value: true
+  - Class: rviz_default_plugins/LaserScan
+    Enabled: true
+    Name: jaal_4 lidar
+    Topic:
+      Depth: 5
+      Durability Policy: Volatile
+      History Policy: Keep Last
+      Reliability Policy: Best Effort
+      Value: /jaal_4/scan
+    Size (m): 0.06
+    Style: Flat Squares
+    Color Transformer: FlatColor
+    Color: 255; 85; 0
+    Value: true
+  - Class: rviz_default_plugins/RobotModel
+    Enabled: true
+    Name: jaal_5
+    Alpha: 1
+    Description Source: Topic
+    Description Topic:
+      Depth: 5
+      Durability Policy: Transient Local
+      History Policy: Keep Last
+      Reliability Policy: Reliable
+      Value: /jaal_5/robot_description
+    TF Prefix: jaal_5
+    Visual Enabled: true
+    Collision Enabled: false
+    Value: true
+  - Class: rviz_default_plugins/Odometry
+    Enabled: true
+    Name: jaal_5 estimate
+    Topic:
+      Depth: 5
+      Durability Policy: Volatile
+      History Policy: Keep Last
+      Reliability Policy: Reliable
+      Value: /jaal_5/localization/odom
+    Keep: 200
+    Position Tolerance: 0.3
+    Angle Tolerance: 0.5
+    Shape:
+      Value: Arrow
+      Color: 110; 79; 158
+      Alpha: 1
+      Shaft Length: 0.8
+      Shaft Radius: 0.05
+      Head Length: 0.3
+      Head Radius: 0.12
+    Covariance:
+      Value: false
+    Value: true
+  - Class: rviz_default_plugins/LaserScan
+    Enabled: true
+    Name: jaal_5 lidar
+    Topic:
+      Depth: 5
+      Durability Policy: Volatile
+      History Policy: Keep Last
+      Reliability Policy: Best Effort
+      Value: /jaal_5/scan
+    Size (m): 0.06
+    Style: Flat Squares
+    Color Transformer: FlatColor
+    Color: 255; 85; 0
+    Value: true
+  - Class: rviz_default_plugins/RobotModel
+    Enabled: true
+    Name: jaal_6
+    Alpha: 1
+    Description Source: Topic
+    Description Topic:
+      Depth: 5
+      Durability Policy: Transient Local
+      History Policy: Keep Last
+      Reliability Policy: Reliable
+      Value: /jaal_6/robot_description
+    TF Prefix: jaal_6
+    Visual Enabled: true
+    Collision Enabled: false
+    Value: true
+  - Class: rviz_default_plugins/Odometry
+    Enabled: true
+    Name: jaal_6 estimate
+    Topic:
+      Depth: 5
+      Durability Policy: Volatile
+      History Policy: Keep Last
+      Reliability Policy: Reliable
+      Value: /jaal_6/localization/odom
+    Keep: 200
+    Position Tolerance: 0.3
+    Angle Tolerance: 0.5
+    Shape:
+      Value: Arrow
+      Color: 63; 127; 134
+      Alpha: 1
+      Shaft Length: 0.8
+      Shaft Radius: 0.05
+      Head Length: 0.3
+      Head Radius: 0.12
+    Covariance:
+      Value: false
+    Value: true
+  - Class: rviz_default_plugins/LaserScan
+    Enabled: true
+    Name: jaal_6 lidar
+    Topic:
+      Depth: 5
+      Durability Policy: Volatile
+      History Policy: Keep Last
+      Reliability Policy: Best Effort
+      Value: /jaal_6/scan
+    Size (m): 0.06
+    Style: Flat Squares
+    Color Transformer: FlatColor
+    Color: 255; 85; 0
+    Value: true
+  Enabled: true
+  Global Options:
+    Background Color: 38; 44; 41
+    Fixed Frame: map
+    Frame Rate: 30
+  Name: root
+  Tools:
+  - Class: rviz_default_plugins/Interact
+  - Class: rviz_default_plugins/MoveCamera
+  - Class: rviz_default_plugins/Measure
+    Line color: 128; 128; 0
+  Value: true
+  Views:
+    Current:
+      Class: rviz_default_plugins/Orbit
+      Distance: 55
+      Enable Stereo Rendering:
+        Value: false
+      Focal Point:
+        X: 18
+        Y: 12
+        Z: 0
+      Name: Current View
+      Near Clip Distance: 0.01
+      Pitch: 0.75
+      Yaw: 3.9
+      Target Frame: <Fixed Frame>
+      Value: Orbit (rviz_default_plugins)
+    Saved: null
+Window Geometry:
+  Height: 900
+  Width: 1500
+  Hide Left Dock: false
+  Hide Right Dock: true

@@ -1,0 +1,102 @@
+<?xml version="1.0"?>
+<!--
+  B · Jaal — electric platform with four independently steered wheels (fs::SwerveDrive), two
+  rotary sapling drums, a rear planting gantry, RTK-GNSS, IMU and a front safety lidar.
+  base_link at the wheelbase centre, 0.38 m above ground (wheel axle height).
+
+  xacro jaal.urdf.xacro ns:=jaal_1 soil_map:=/abs/open_field.soilmap lidar:=true
+-->
+<robot name="jaal" xmlns:xacro="http://www.ros.org/wiki/xacro">
+  <xacro:arg name="ns" default="jaal_1"/>
+  <xacro:arg name="soil_map" default=""/>
+  <xacro:arg name="lidar" default="true"/>
+  <xacro:arg name="gnss_sigma" default="0.02"/>
+  <xacro:property name="ns" value="$(arg ns)"/>
+  <xacro:include filename="$(find fs_description)/urdf/common.xacro"/>
+
+  <link name="base_link">
+    <!-- 30 kWh LFP pack low in the body; payload half used -->
+    <xacro:box_inertial m="1000" x="2.8" y="1.3" z="0.9"><origin xyz="0 0 0.28"/></xacro:box_inertial>
+    <xacro:cbox xyz="0 0 0.22" size="2.8 1.3 0.45"/>
+    <xacro:vbox xyz="0 0 0.22" size="2.8 1.3 0.45" material="fs_yellow"/>
+    <xacro:vbox xyz="0 0 0.04" size="2.84 1.34 0.1" material="fs_graphite"/>
+    <xacro:vbox xyz="0 0 0.47" size="2.7 1.24 0.05" material="fs_graphite"/>
+    <xacro:vbox xyz="1.45 0 0.12" size="0.1 1.2 0.2" material="fs_graphite"/>
+    <xacro:vbox xyz="-1.45 0 0.12" size="0.1 1.2 0.2" material="fs_graphite"/>
+    <!-- drums -->
+    <xacro:vcyl xyz="0.55 0 1.36" r="0.48" l="1.7" material="fs_graphite"/>
+    <xacro:vcyl xyz="0.55 0 1.36" r="0.42" l="1.66" material="fs_leaf"/>
+    <xacro:vcyl xyz="-0.43 0 1.36" r="0.48" l="1.7" material="fs_graphite"/>
+    <xacro:vcyl xyz="-0.43 0 1.36" r="0.42" l="1.66" material="fs_leaf"/>
+    <!-- frame and solar roof -->
+    <xacro:vbox xyz="1.12 0.6 1.45" size="0.05 0.05 1.9" material="fs_graphite"/>
+    <xacro:vbox xyz="1.12 -0.6 1.45" size="0.05 0.05 1.9" material="fs_graphite"/>
+    <xacro:vbox xyz="-1.12 0.6 1.45" size="0.05 0.05 1.9" material="fs_graphite"/>
+    <xacro:vbox xyz="-1.12 -0.6 1.45" size="0.05 0.05 1.9" material="fs_graphite"/>
+    <xacro:vbox xyz="0 0 2.42" size="2.5 1.36 0.05" material="fs_solar"/>
+    <xacro:vcyl xyz="1.15 0 2.67" r="0.03" l="0.5" material="fs_graphite"/>
+    <xacro:vcyl xyz="-1.0 -0.5 2.5" r="0.06" l="0.1" material="fs_orange"/>
+    <!-- rear gantry -->
+    <xacro:vbox xyz="-1.38 0.45 0.87" size="0.08 0.08 0.8" material="fs_graphite"/>
+    <xacro:vbox xyz="-1.38 -0.45 0.87" size="0.08 0.08 0.8" material="fs_graphite"/>
+    <xacro:vbox xyz="-1.38 0 1.3" size="0.1 1.0 0.1" material="fs_graphite"/>
+    <xacro:vbox xyz="-1.53 0 1.24" size="0.34 0.12 0.1" material="fs_yellow"/>
+    <xacro:vbox xyz="-1.65 0 1.12" size="0.24 0.24 0.26" material="fs_yellow"/>
+    <xacro:vcyl xyz="-1.76 0.1 0.9" r="0.015" l="0.25" material="fs_blue"/>
+  </link>
+
+  <xacro:macro name="module" params="tag x y">
+    <joint name="steer_${tag}_joint" type="revolute">
+      <parent link="base_link"/><child link="steer_${tag}_link"/>
+      <origin xyz="${x} ${y} 0.25"/><axis xyz="0 0 1"/>
+      <limit lower="-2.0" upper="2.0" effort="800" velocity="3.0"/><dynamics damping="5"/>
+    </joint>
+    <link name="steer_${tag}_link">
+      <inertial><mass value="8"/><inertia ixx="0.1" iyy="0.1" izz="0.1" ixy="0" ixz="0" iyz="0"/></inertial>
+      <xacro:vbox xyz="0 0 0.0" size="0.16 0.12 0.3" material="fs_graphite"/>
+    </link>
+    <xacro:wheel name="wheel_${tag}" parent="steer_${tag}_link" xyz="0 0 -0.25" r="0.38" w="0.22" m="35" rim="fs_graphite"/>
+  </xacro:macro>
+  <xacro:module tag="fl" x="0.95" y="0.83"/>
+  <xacro:module tag="fr" x="0.95" y="-0.83"/>
+  <xacro:module tag="rl" x="-0.95" y="0.83"/>
+  <xacro:module tag="rr" x="-0.95" y="-0.83"/>
+
+  <xacro:auger_head parent="base_link" xyz="-1.65 0 0.92" length="0.72" diameter="0.12" stroke="1.1"/>
+  <xacro:gnss ns="${ns}" parent="base_link" xyz="1.15 0 2.95" sigma="$(arg gnss_sigma)"/>
+  <xacro:imu ns="${ns}" name="imu" parent="base_link" xyz="0 0 0.3"/>
+  <xacro:if value="$(arg lidar)">
+    <xacro:lidar2d ns="${ns}" parent="base_link" xyz="1.52 0 -0.08"/>  <!-- 0.30 m above ground: sees stumps -->
+  </xacro:if>
+
+  <gazebo>
+    <plugin filename="fs_swerve_drive_system" name="fs::SwerveDrive">
+      <module><steer_joint>steer_fl_joint</steer_joint><wheel_joint>wheel_fl_joint</wheel_joint><x>0.95</x><y>0.83</y></module>
+      <module><steer_joint>steer_fr_joint</steer_joint><wheel_joint>wheel_fr_joint</wheel_joint><x>0.95</x><y>-0.83</y></module>
+      <module><steer_joint>steer_rl_joint</steer_joint><wheel_joint>wheel_rl_joint</wheel_joint><x>-0.95</x><y>0.83</y></module>
+      <module><steer_joint>steer_rr_joint</steer_joint><wheel_joint>wheel_rr_joint</wheel_joint><x>-0.95</x><y>-0.83</y></module>
+      <wheel_radius>0.38</wheel_radius>
+      <topic>/model/${ns}/cmd_vel</topic><odom_topic>/model/${ns}/odometry</odom_topic>
+      <odom_frame>${ns}/odom</odom_frame><base_frame>${ns}/base_link</base_frame>
+      <max_speed>1.5</max_speed><max_accel>0.6</max_accel><max_yaw_rate>0.8</max_yaw_rate>
+      <max_steer_rate>2.5</max_steer_rate><steer_p_gain>10</steer_p_gain>
+    </plugin>
+    <xacro:common_plugins ns="${ns}"/>
+    <plugin filename="fs_terramechanics_system" name="fs::Terramechanics">
+      <soil_map>$(arg soil_map)</soil_map>
+      <topic>/model/${ns}/terramechanics</topic>
+      <xacro:tm_wheel link="wheel_fl_link" r="0.38" b="0.22" l="0.19"/>
+      <xacro:tm_wheel link="wheel_fr_link" r="0.38" b="0.22" l="0.19"/>
+      <xacro:tm_wheel link="wheel_rl_link" r="0.38" b="0.22" l="0.19"/>
+      <xacro:tm_wheel link="wheel_rr_link" r="0.38" b="0.22" l="0.19"/>
+    </plugin>
+    <plugin filename="fs_auger_soil_system" name="fs::AugerSoil">
+      <soil_map>$(arg soil_map)</soil_map>
+      <feed_joint>auger_feed_joint</feed_joint><spin_joint>auger_spin_joint</spin_joint>
+      <tip_link>auger_link</tip_link><tip_offset>0 0 -0.72</tip_offset><tool_axis>0 0 -1</tool_axis>
+      <diameter>0.12</diameter><max_power>4000</max_power><efficiency>0.85</efficiency>
+      <max_thrust>3000</max_thrust><max_feed>0.15</max_feed><rpm>140</rpm><max_stroke>1.1</max_stroke>
+      <cmd_topic>/model/${ns}/auger/cmd</cmd_topic><status_topic>/model/${ns}/auger/status</status_topic>
+    </plugin>
+  </gazebo>
+</robot>

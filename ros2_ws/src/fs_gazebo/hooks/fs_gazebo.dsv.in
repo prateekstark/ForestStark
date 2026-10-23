@@ -1,0 +1,3 @@
+prepend-non-duplicate;GZ_SIM_SYSTEM_PLUGIN_PATH;lib
+prepend-non-duplicate;GZ_SIM_RESOURCE_PATH;share/fs_gazebo/models
+prepend-non-duplicate;GZ_SIM_RESOURCE_PATH;share

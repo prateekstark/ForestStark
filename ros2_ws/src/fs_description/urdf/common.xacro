@@ -1,0 +1,204 @@
+<?xml version="1.0"?>
+<!--
+  Shared macros for the ForestStark robots: inertia helpers, materials, wheels, sensors and the
+  auger head. Every gz topic is under /model/${ns}/...; fs_bringup's bridge maps them to /${ns}/...
+-->
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+  <xacro:property name="PI" value="3.14159265"/>
+  <!-- Wheel/track collisions are nearly frictionless: fs::Terramechanics supplies the soil forces. -->
+  <xacro:property name="TYRE_MU" value="0.02"/>
+
+  <material name="fs_yellow"><color rgba="0.886 0.647 0.078 1"/></material>
+  <material name="fs_graphite"><color rgba="0.19 0.21 0.20 1"/></material>
+  <material name="fs_steel"><color rgba="0.56 0.60 0.61 1"/></material>
+  <material name="fs_rubber"><color rgba="0.10 0.11 0.11 1"/></material>
+  <material name="fs_blue"><color rgba="0.18 0.42 0.56 1"/></material>
+  <material name="fs_leaf"><color rgba="0.31 0.60 0.25 1"/></material>
+  <material name="fs_glass"><color rgba="0.66 0.80 0.84 0.35"/></material>
+  <material name="fs_solar"><color rgba="0.12 0.20 0.33 1"/></material>
+  <material name="fs_skin"><color rgba="0.72 0.50 0.35 1"/></material>
+  <material name="fs_cloth"><color rgba="0.23 0.35 0.55 1"/></material>
+  <material name="fs_orange"><color rgba="1.0 0.48 0.10 1"/></material>
+  <material name="fs_shade"><color rgba="0.21 0.37 0.23 0.6"/></material>
+
+  <xacro:macro name="box_inertial" params="m x y z *origin">
+    <inertial>
+      <xacro:insert_block name="origin"/>
+      <mass value="${m}"/>
+      <inertia ixx="${m*(y*y+z*z)/12}" iyy="${m*(x*x+z*z)/12}" izz="${m*(x*x+y*y)/12}" ixy="0" ixz="0" iyz="0"/>
+    </inertial>
+  </xacro:macro>
+
+  <xacro:macro name="cyl_inertial_y" params="m r l">
+    <inertial>
+      <mass value="${m}"/>
+      <inertia ixx="${m*(3*r*r+l*l)/12}" iyy="${m*r*r/2}" izz="${m*(3*r*r+l*l)/12}" ixy="0" ixz="0" iyz="0"/>
+    </inertial>
+  </xacro:macro>
+
+  <xacro:macro name="vbox" params="xyz size material rpy:='0 0 0'">
+    <visual><origin xyz="${xyz}" rpy="${rpy}"/><geometry><box size="${size}"/></geometry><material name="${material}"/></visual>
+  </xacro:macro>
+  <xacro:macro name="vcyl" params="xyz r l material rpy:='0 0 0'">
+    <visual><origin xyz="${xyz}" rpy="${rpy}"/><geometry><cylinder radius="${r}" length="${l}"/></geometry><material name="${material}"/></visual>
+  </xacro:macro>
+  <xacro:macro name="cbox" params="xyz size rpy:='0 0 0'">
+    <collision><origin xyz="${xyz}" rpy="${rpy}"/><geometry><box size="${size}"/></geometry></collision>
+  </xacro:macro>
+
+  <!-- A wheel spinning about its local +y axis. shape: cylinder | sphere (sphere rides rough terrain better). -->
+  <xacro:macro name="wheel" params="name parent xyz r w m rim:=fs_yellow shape:=cylinder">
+    <joint name="${name}_joint" type="continuous">
+      <parent link="${parent}"/><child link="${name}_link"/>
+      <origin xyz="${xyz}"/><axis xyz="0 1 0"/>
+      <limit effort="6000" velocity="40"/><dynamics damping="0.5"/>
+    </joint>
+    <link name="${name}_link">
+      <xacro:cyl_inertial_y m="${m}" r="${r}" l="${w}"/>
+      <visual><origin rpy="${PI/2} 0 0"/><geometry><cylinder radius="${r}" length="${w}"/></geometry><material name="fs_rubber"/></visual>
+      <visual><origin rpy="${PI/2} 0 0"/><geometry><cylinder radius="${r*0.62}" length="${w*1.04}"/></geometry><material name="${rim}"/></visual>
+      <visual><origin rpy="0 0 0"/><geometry><box size="${r*1.15} ${w*1.08} ${r*0.09}"/></geometry><material name="fs_graphite"/></visual>
+      <collision>
+        <xacro:if value="${shape == 'sphere'}"><geometry><sphere radius="${r}"/></geometry></xacro:if>
+        <xacro:unless value="${shape == 'sphere'}"><origin rpy="${PI/2} 0 0"/><geometry><cylinder radius="${r}" length="${w}"/></geometry></xacro:unless>
+      </collision>
+    </link>
+    <gazebo reference="${name}_link"><mu1>${TYRE_MU}</mu1><mu2>${TYRE_MU}</mu2><kp>2e6</kp><kd>1e4</kd></gazebo>
+  </xacro:macro>
+
+  <!-- One <wheel> entry for the fs::Terramechanics plugin. -->
+  <xacro:macro name="tm_wheel" params="link r b l">
+    <wheel><link>${link}</link><radius>${r}</radius><width>${b}</width><contact_length>${l}</contact_length><axis>0 1 0</axis></wheel>
+  </xacro:macro>
+
+  <xacro:macro name="gnss" params="ns parent xyz sigma:=0.02">
+    <joint name="gnss_joint" type="fixed"><parent link="${parent}"/><child link="gnss_link"/><origin xyz="${xyz}"/></joint>
+    <link name="gnss_link">
+      <visual><geometry><cylinder radius="0.09" length="0.03"/></geometry><material name="fs_graphite"/></visual>
+    </link>
+    <gazebo reference="gnss_link">
+      <sensor name="gnss" type="navsat">
+        <always_on>1</always_on><update_rate>10</update_rate><topic>/model/${ns}/gnss</topic>
+        <gz_frame_id>${ns}/gnss_link</gz_frame_id>
+        <navsat>
+          <position_sensing>
+            <!-- gz applies horizontal position noise to latitude/longitude in DEGREES: convert from metres. -->
+            <horizontal><noise type="gaussian"><mean>0</mean><stddev>${sigma/111320.0}</stddev></noise></horizontal>
+            <vertical><noise type="gaussian"><mean>0</mean><stddev>${sigma*2}</stddev></noise></vertical>
+          </position_sensing>
+          <velocity_sensing>
+            <horizontal><noise type="gaussian"><mean>0</mean><stddev>0.02</stddev></noise></horizontal>
+            <vertical><noise type="gaussian"><mean>0</mean><stddev>0.04</stddev></noise></vertical>
+          </velocity_sensing>
+        </navsat>
+      </sensor>
+    </gazebo>
+  </xacro:macro>
+
+  <xacro:macro name="imu" params="ns name parent xyz">
+    <joint name="${name}_joint" type="fixed"><parent link="${parent}"/><child link="${name}_link"/><origin xyz="${xyz}"/></joint>
+    <link name="${name}_link"/>
+    <gazebo reference="${name}_link">
+      <sensor name="${name}" type="imu">
+        <always_on>1</always_on><update_rate>100</update_rate><topic>/model/${ns}/${name}</topic>
+        <gz_frame_id>${ns}/${name}_link</gz_frame_id>
+        <imu>
+          <angular_velocity>
+            <x><noise type="gaussian"><mean>0</mean><stddev>0.002</stddev><bias_mean>0.0005</bias_mean></noise></x>
+            <y><noise type="gaussian"><mean>0</mean><stddev>0.002</stddev><bias_mean>0.0005</bias_mean></noise></y>
+            <z><noise type="gaussian"><mean>0</mean><stddev>0.002</stddev><bias_mean>0.0005</bias_mean></noise></z>
+          </angular_velocity>
+          <linear_acceleration>
+            <x><noise type="gaussian"><mean>0</mean><stddev>0.02</stddev></noise></x>
+            <y><noise type="gaussian"><mean>0</mean><stddev>0.02</stddev></noise></y>
+            <z><noise type="gaussian"><mean>0</mean><stddev>0.02</stddev></noise></z>
+          </linear_acceleration>
+        </imu>
+      </sensor>
+    </gazebo>
+  </xacro:macro>
+
+  <!-- Planar safety lidar. Needs rendering (gpu_lidar); off with lidar:=false. -->
+  <xacro:macro name="lidar2d" params="ns parent xyz fov:=4.71 samples:=540 max_range:=20.0">
+    <joint name="lidar_joint" type="fixed"><parent link="${parent}"/><child link="lidar_link"/><origin xyz="${xyz}"/></joint>
+    <link name="lidar_link">
+      <visual><geometry><cylinder radius="0.05" length="0.07"/></geometry><material name="fs_graphite"/></visual>
+    </link>
+    <gazebo reference="lidar_link">
+      <sensor name="lidar" type="gpu_lidar">
+        <always_on>1</always_on><update_rate>10</update_rate><topic>/model/${ns}/scan</topic>
+        <gz_frame_id>${ns}/lidar_link</gz_frame_id>
+        <lidar>
+          <scan><horizontal><samples>${samples}</samples><resolution>1</resolution>
+            <min_angle>${-fov/2}</min_angle><max_angle>${fov/2}</max_angle></horizontal></scan>
+          <range><min>0.3</min><max>${max_range}</max><resolution>0.01</resolution></range>
+          <noise type="gaussian"><mean>0</mean><stddev>0.01</stddev></noise>
+        </lidar>
+      </sensor>
+    </gazebo>
+  </xacro:macro>
+
+  <!-- Auger head: prismatic feed (positive = down along the tool), spin joint, auger link whose
+       origin is at the feed carrier; the bit tip is at tool_axis * length. -->
+  <xacro:macro name="auger_head" params="parent xyz rpy:='0 0 0' length diameter stroke feed_axis:='0 0 -1' spin_axis:='0 0 1' shaft_rpy:='0 0 0' shaft_dir:='0 0 -1'">
+    <joint name="auger_feed_joint" type="prismatic">
+      <parent link="${parent}"/><child link="auger_feed_link"/>
+      <origin xyz="${xyz}" rpy="${rpy}"/><axis xyz="${feed_axis}"/>
+      <limit lower="0" upper="${stroke}" effort="20000" velocity="0.6"/><dynamics damping="50"/>
+    </joint>
+    <link name="auger_feed_link">
+      <inertial><mass value="8"/><inertia ixx="0.05" iyy="0.05" izz="0.05" ixy="0" ixz="0" iyz="0"/></inertial>
+      <visual><geometry><cylinder radius="0.075" length="0.16"/></geometry><material name="fs_graphite"/></visual>
+    </link>
+    <joint name="auger_spin_joint" type="continuous">
+      <parent link="auger_feed_link"/><child link="auger_link"/>
+      <axis xyz="${spin_axis}"/><limit effort="3000" velocity="30"/>
+    </joint>
+    <xacro:property name="dx" value="${float(shaft_dir.split()[0])}"/>
+    <xacro:property name="dy" value="${float(shaft_dir.split()[1])}"/>
+    <xacro:property name="dz" value="${float(shaft_dir.split()[2])}"/>
+    <link name="auger_link">
+      <inertial><origin xyz="${dx*length/2} ${dy*length/2} ${dz*length/2}"/><mass value="10"/>
+        <inertia ixx="0.3" iyy="0.3" izz="0.3" ixy="0" ixz="0" iyz="0"/></inertial>
+      <visual><origin xyz="${dx*length/2} ${dy*length/2} ${dz*length/2}" rpy="${shaft_rpy}"/>
+        <geometry><cylinder radius="0.03" length="${length}"/></geometry><material name="fs_steel"/></visual>
+      <visual><origin xyz="${dx*length*0.55} ${dy*length*0.55} ${dz*length*0.55}" rpy="${shaft_rpy}"/>
+        <geometry><cylinder radius="${diameter/2}" length="${length*0.75}"/></geometry><material name="fs_steel"/></visual>
+    </link>
+  </xacro:macro>
+
+  <xacro:macro name="person" params="parent name xyz rpy:='0 0 0' cloth:=fs_cloth">
+    <joint name="${name}_joint" type="fixed"><parent link="${parent}"/><child link="${name}_link"/><origin xyz="${xyz}" rpy="${rpy}"/></joint>
+    <link name="${name}_link">
+      <xacro:vbox xyz="0 0.1 0.41" size="0.14 0.16 0.82" material="fs_graphite"/>
+      <xacro:vbox xyz="0 -0.1 0.41" size="0.14 0.16 0.82" material="fs_graphite"/>
+      <xacro:vcyl xyz="0 0 1.13" r="0.17" l="0.62" material="${cloth}"/>
+      <visual><origin xyz="0 0 1.58"/><geometry><sphere radius="0.115"/></geometry><material name="fs_skin"/></visual>
+    </link>
+  </xacro:macro>
+
+  <!-- Velocity-mode joint position controller: topic /model/${ns}/joint/${joint}/cmd_pos. -->
+  <xacro:macro name="pos_controller" params="ns joint p:=2.0 vmax:=0.8 init:=0.0">
+    <plugin filename="gz-sim-joint-position-controller-system" name="gz::sim::systems::JointPositionController">
+      <joint_name>${joint}</joint_name>
+      <topic>/model/${ns}/joint/${joint}/cmd_pos</topic>
+      <use_velocity_commands>true</use_velocity_commands>
+      <p_gain>${p}</p_gain><i_gain>0</i_gain><d_gain>0</d_gain>
+      <cmd_max>${vmax}</cmd_max><cmd_min>${-vmax}</cmd_min>
+      <initial_position>${init}</initial_position>
+    </plugin>
+  </xacro:macro>
+
+  <xacro:macro name="common_plugins" params="ns">
+    <plugin filename="fs_joint_state_rate_system" name="fs::JointStateRate">
+      <topic>/model/${ns}/joint_states</topic><update_rate>30</update_rate>
+    </plugin>
+    <!-- Ground truth for evaluation only; the autonomy stack never reads it. -->
+    <plugin filename="gz-sim-odometry-publisher-system" name="gz::sim::systems::OdometryPublisher">
+      <odom_frame>map</odom_frame><robot_base_frame>${ns}/base_link</robot_base_frame>
+      <odom_topic>/model/${ns}/ground_truth</odom_topic><odom_publish_frequency>20</odom_publish_frequency>
+      <dimensions>3</dimensions><tf_topic>/model/${ns}/ground_truth_tf</tf_topic>
+    </plugin>
+  </xacro:macro>
+</robot>

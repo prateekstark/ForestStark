@@ -1,0 +1,14 @@
+# Drum swap, water refill and charge at the tender truck. The robot must already be in the bay.
+string robot
+uint32 plugs_needed
+float64 water_needed_l
+float64 soc
+---
+uint32 plugs_loaded
+float64 water_loaded_l
+float64 soc_after
+float64 service_time_s
+string note
+---
+string stage          # waiting_stock | drum_swap | refill | charge
+float64 remaining_s

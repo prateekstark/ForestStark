@@ -1,0 +1,8 @@
+# Ask the tender for a service bay. If none is free the robot waits at wait_pose.
+string robot
+bool release              # true: give the bay back (service finished or aborted)
+---
+bool granted
+uint32 queue_position     # 0 when granted
+geometry_msgs/Pose bay_pose
+geometry_msgs/Pose wait_pose
