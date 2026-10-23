@@ -18,3 +18,8 @@ float64 bore_energy_kj
 float64 cycle_time_s
 float64 water_l
 string species
+# Regional prescription (fs_autonomy.silviculture)
+string region              # e.g. thar_arid
+string microsite           # e.g. saline patch, waterlogged, rocky slope
+string method              # what was done: pit, backfill, depth, catchment, mulch, water
+string deviations          # where the machine departed from the prescription, and why

@@ -7,7 +7,8 @@
 Arguments
   robots        fleet size, 1-6 (3)
   field         demo (36 x 24 m) | full (120 x 84 m)
-  pattern       square | triangular;   spacing (3.0)
+  region        eastern_plain (Jaipur) | thar_arid (Jodhpur) | ignp_canal (Sri Ganganagar) | hadoti_vertisol (Kota)
+  pattern       square | triangular;   spacing (the region's: 3 m, 5 m in the Thar)
   plugs         plugs per drum load (demo default 18, so each robot visits the tender once)
   bays          service bays at the tender (1)
   stock_plugs   plugs on the tender at the start (demo 36: the third robot waits for a restock)
@@ -26,9 +27,9 @@ from launch_ros.actions import Node
 
 from fs_bringup import sim
 
-ARGS = {"robots": "3", "field": "demo", "pattern": "square", "spacing": "3.0", "plugs": "", "stock_plugs": "",
+ARGS = {"region": "", "robots": "3", "field": "demo", "pattern": "square", "spacing": "", "plugs": "", "stock_plugs": "",
         "bays": "1", "rtk_policy": "continue", "dropouts": "0", "cows": "2", "lidar": "true", "cruise": "1.0",
-        "headless": "false", "rtf": "1.0", "rviz": "true", "seed": "11", "soil": "sandy_loam", "log_dir": "", "inspect": "false", "people": ""}
+        "headless": "false", "rtf": "1.0", "rviz": "true", "seed": "11", "soil": "", "log_dir": "", "inspect": "false", "people": ""}
 
 
 def setup(context):
@@ -39,7 +40,8 @@ def setup(context):
     demo = c["field"] == "demo"
     plugs = int(c["plugs"]) if c["plugs"] else (18 if demo else 360)
     stock = int(c["stock_plugs"]) if c["stock_plugs"] else (36 if demo else -1)
-    site_dir = sim.make_site("open_field", seed=seed, soil=c["soil"])
+    region, spacing, _ = sim.region_setup("jaal", "open_field", c)
+    site_dir = sim.make_site("open_field", seed=seed, soil=c["soil"] or None, region=region)
     site = sim.load_site_yaml(site_dir, "open_field")
     site_file = site_dir / "open_field.yaml"
     robots = [f"jaal_{i + 1}" for i in range(n)]
@@ -63,7 +65,7 @@ def setup(context):
     actions += [
         Node(package="fs_autonomy", executable="jaal_fleet_manager", output="screen",
              parameters=[{"site_file": str(site_file), "robots": robots, "field": c["field"], "pattern": c["pattern"],
-                          "spacing": float(c["spacing"]), "plugs_per_robot": plugs,
+                          "spacing": spacing, "plugs_per_robot": plugs,
                           "stock_plugs": stock, "bays": int(c["bays"]),
                           "restock_s": 600.0 if demo else 2400.0, "out_dir": out_dir, "use_sim_time": True}]),
         Node(package="fs_autonomy", executable="livestock", output="log",

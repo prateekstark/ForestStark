@@ -161,7 +161,7 @@
     <plugin filename="fs_auger_soil_system" name="fs::AugerSoil">
       <soil_map>$(arg soil_map)</soil_map>
       <feed_joint>auger_feed_joint</feed_joint><spin_joint>auger_spin_joint</spin_joint>
-      <tip_link>auger_link</tip_link><tip_offset>0 0 -0.72</tip_offset><tool_axis>0 0 -1</tool_axis>
+      <tip_link>auger_link</tip_link><reaction_link>shuttle_link</reaction_link><tip_offset>0 0 -0.72</tip_offset><tool_axis>0 0 -1</tool_axis>
       <diameter>0.12</diameter><max_power>4000</max_power><efficiency>0.85</efficiency>
       <max_thrust>3000</max_thrust><max_feed>0.15</max_feed><rpm>140</rpm><max_stroke>1.1</max_stroke>
       <cmd_topic>/model/${ns}/auger/cmd</cmd_topic><status_topic>/model/${ns}/auger/status</status_topic>

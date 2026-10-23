@@ -10,7 +10,9 @@
 //
 // When the hole reaches the soil map's depth-to-rock the auger refuses ("refusal"). A "pick"
 // command keeps going through rock at <rock_energy>, which is how Pahadi's percussive tool
-// is modelled. Re-boring an existing hole costs little energy.
+// is modelled. A kankar (calcic) pan from the soil map's hardpan layer is cut at
+// <hardpan_factor> times the soil's energy: the CSSRI auger-hole technique for sodic land bores
+// through it so roots can reach the moister, less sodic subsoil. Re-boring an existing hole costs little energy.
 //
 // Commands (gz.msgs.StringMsg on <cmd_topic>):  "bore 0.30" | "pick 0.30" | "retract" | "stop"
 //   | "hold" (safety: spin and feed stop where they are) | "resume" (carry on with the held phase)
@@ -58,6 +60,9 @@ public:
     feedJointName_ = _sdf->Get<std::string>("feed_joint", "auger_feed_joint").first;
     spinJointName_ = _sdf->Get<std::string>("spin_joint", "").first;
     tipLinkName_ = _sdf->Get<std::string>("tip_link", "auger_link").first;
+    // where the soil's reaction is applied: the tip by default, or a heavier mounting link (several
+    // kN on a light bit link destabilises the solver; the joints carry it into the machine either way)
+    reactionLinkName_ = _sdf->Get<std::string>("reaction_link", "").first;
     toolAxis_ = _sdf->Get<Vector3d>("tool_axis", Vector3d(0, 0, -1)).first.Normalized();
     tipOffset_ = _sdf->Get<Vector3d>("tip_offset", Vector3d(0, 0, 0)).first;
     p_.diameter = _sdf->Get<double>("diameter", 0.12).first;
@@ -72,6 +77,7 @@ public:
     maxStroke_ = _sdf->Get<double>("max_stroke", 1.0).first;
     rockEnergy_ = _sdf->Get<double>("rock_energy", 45.0).first * 1e6;
     pickEfficiency_ = _sdf->Get<double>("pick_efficiency", 0.5).first;
+    hardpanFactor_ = _sdf->Get<double>("hardpan_factor", 3.5).first;
 
     const std::string mapPath = _sdf->Get<std::string>("soil_map", "").first;
     const std::string def = _sdf->Get<std::string>("default_soil", "sandy_loam").first;
@@ -138,6 +144,8 @@ public:
         soilName_ = s.soil->name; rockDepth_ = s.rockDepth; moisture_ = s.moisture;
         if (depth_ >= target_) { SetPhase(Phase::Bored); break; }
         double e = s.soil->eb * 1e6 * sm::MoistureFactor(s.moisture);
+        inPan_ = depth_ >= s.hardpan && depth_ < s.hardpan + 0.3;      // a pan is ~0.3 m thick
+        if (inPan_) e *= hardpanFactor_;
         sm::AugerParams p = p_;
         inRock_ = depth_ >= s.rockDepth;
         if (inRock_)
@@ -153,7 +161,8 @@ public:
         feedVel = rate_.feed;
         energy_ += rate_.power * dt;
         // Soil reaction on the bit: thrust back along the tool, cutting torque against the spin.
-        tip_.AddWorldWrench(_ecm, dir * (-rate_.thrust), dir * (rate_.torque));
+        (reaction_.Entity() != gz::sim::kNullEntity ? reaction_ : tip_)
+            .AddWorldWrench(_ecm, dir * (-rate_.thrust), dir * (rate_.torque));
         break;
       }
       case Phase::Retracting:
@@ -168,9 +177,12 @@ public:
     }
 
     feed_.SetVelocity(_ecm, {feedVel});
+    feedCmd_ = feedVel;
     if (spin_.Entity() != gz::sim::kNullEntity)
       spin_.SetVelocity(_ecm, {spinning ? p_.rpm * 2.0 * sm::kPi / 60.0 : 0.0});
 
+    tipZ_ = tipWorld.Z();
+    groundZ_ = map_.Elevation(tipWorld.X(), tipWorld.Y());
     if (simTime_ - lastPub_ >= publishPeriod_) { lastPub_ = simTime_; Publish(q); }
   }
 
@@ -254,6 +266,12 @@ private:
     feed_ = gz::sim::Joint(fj);
     feed_.EnablePositionCheck(_ecm, true);
     tip_ = gz::sim::Link(tl);
+    if (!reactionLinkName_.empty())
+    {
+      auto rl = model_.LinkByName(_ecm, reactionLinkName_);
+      if (rl != gz::sim::kNullEntity) reaction_ = gz::sim::Link(rl);
+      else gzwarn << "[fs::AugerSoil] reaction link '" << reactionLinkName_ << "' not found; using the tip\n";
+    }
     if (!spinJointName_.empty())
     {
       auto sj = model_.JointByName(_ecm, spinJointName_);
@@ -268,10 +286,12 @@ private:
     js << std::fixed << std::setprecision(4)
        << "{\"t\":" << simTime_ << ",\"phase\":\"" << Name(phase_) << "\",\"phase_time\":" << (simTime_ - phaseStart_)
        << ",\"depth\":" << depth_ << ",\"target\":" << target_ << ",\"stroke\":" << q
+       << ",\"tip_z\":" << tipZ_ << ",\"ground_z\":" << groundZ_ << ",\"feed_cmd\":" << feedCmd_
        << ",\"feed\":" << rate_.feed << ",\"thrust\":" << rate_.thrust << ",\"torque\":" << rate_.torque
        << ",\"power\":" << rate_.power << ",\"energy_kj\":" << energy_ / 1000.0
        << ",\"thrust_limited\":" << (rate_.thrustLimited ? "true" : "false")
-       << ",\"in_rock\":" << (inRock_ ? "true" : "false") << ",\"pick\":" << (pick_ ? "true" : "false")
+       << ",\"in_rock\":" << (inRock_ ? "true" : "false") << ",\"in_pan\":" << (inPan_ ? "true" : "false")
+       << ",\"pick\":" << (pick_ ? "true" : "false")
        << ",\"soil\":\"" << soilName_ << "\",\"rock_depth\":" << rockDepth_ << ",\"moisture\":" << moisture_
        << ",\"hole\":[" << holeX_ << "," << holeY_ << "]}";
     gz::msgs::StringMsg msg;
@@ -281,13 +301,16 @@ private:
 
   gz::sim::Model model_;
   gz::sim::Joint feed_, spin_;
-  gz::sim::Link tip_;
-  std::string feedJointName_, spinJointName_, tipLinkName_, cmdTopic_, statusTopic_;
+  gz::sim::Link tip_, reaction_;
+  std::string feedJointName_, spinJointName_, tipLinkName_, reactionLinkName_, cmdTopic_, statusTopic_;
   Vector3d toolAxis_{0, 0, -1}, tipOffset_;
   sm::AugerParams p_;
   sm::AugerRate rate_;
   sm::SoilMap map_;
   double freeSpeed_{0.25}, retractSpeed_{0.3}, maxStroke_{1.0}, rockEnergy_{45e6}, pickEfficiency_{0.5};
+  double hardpanFactor_{3.5};
+  double tipZ_{0}, groundZ_{0}, feedCmd_{0};
+  bool inPan_{false};
   bool resolved_{false}, warned_{false}, pick_{false}, inRock_{false};
   Phase phase_{Phase::Idle};
   Phase heldFrom_{Phase::Idle};

@@ -21,7 +21,8 @@ from ..geometry import Polyline
 from ..ros_common import load_site, param, sim_now
 
 FIELDS = ["time_s", "robot", "id", "spot_id", "outcome", "tool", "reason", "species", "x", "y", "lat", "lon",
-          "error_cm", "soil", "rock_depth_m", "hole_depth_m", "bore_energy_kj", "cycle_time_s", "water_l"]
+          "error_cm", "soil", "rock_depth_m", "hole_depth_m", "bore_energy_kj", "cycle_time_s", "water_l",
+          "region", "microsite", "method", "deviations"]
 
 
 class MissionLogger(Node):
@@ -58,7 +59,8 @@ class MissionLogger(Node):
                "y": round(r.actual.y, 3), "lat": f"{r.latitude:.8f}", "lon": f"{r.longitude:.8f}",
                "error_cm": round(r.error_m * 100, 1), "soil": r.soil, "rock_depth_m": round(r.rock_depth_m, 3),
                "hole_depth_m": round(r.hole_depth_m, 3), "bore_energy_kj": round(r.bore_energy_kj, 2),
-               "cycle_time_s": round(r.cycle_time_s, 1), "water_l": round(r.water_l, 2)}
+               "cycle_time_s": round(r.cycle_time_s, 1), "water_l": round(r.water_l, 2),
+               "region": r.region, "microsite": r.microsite, "method": r.method, "deviations": r.deviations}
         self.records.append(row)
         self.csv.writerow(row)
         self.csv_f.flush()

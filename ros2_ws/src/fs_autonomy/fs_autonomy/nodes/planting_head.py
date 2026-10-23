@@ -15,6 +15,19 @@ Action plant_spot (fs_interfaces/PlantSpot):
   log      fs_interfaces/PlantRecord on /plants/records, with the true hole position from the
            simulator so placement error is measured, not assumed.
 
+Regional prescriptions (fs_autonomy.silviculture): for every spot the head looks up the site's
+region and the soil under the target (sodicity, kankar pan, waterlogging, moisture, rock) and
+carries out that region's method with the robot's own mechanisms: a cluster of bores where the pit
+is wider than the auger, pre-watering a dry pit, refilling the hole with compost / gypsum / sand /
+hydrogel from the hoppers, a mound on waterlogged ground, the plant set sunken or raised, a saucer
+basin, contour trench or half-moon, mulch, and the region's water dose. The record keeps the
+species, the microsite, what was done and where the machine departed from the prescription.
+
+Species to microsite: from the robot's mission the head knows the species each upcoming spot
+needs, labels the plugs in its store in that order (as a nursery loads trays in planting order)
+and has the feeder pick the plug the next spot needs; if none of that species is left it plants
+what it has and records the substitution.
+
 Safety: while safety/status reports tool_hold (a person within 2 m of the tool) every joint is
 held where it is, the auger is told to "hold" (spin and feed stop mid-hole), and all waits stop
 counting; when the zone has been clear for 3 s the same commands are re-sent and the cycle
@@ -32,11 +45,12 @@ the navigator can shift and retry.
 import math
 import threading
 import time
+from collections import Counter
 
 import numpy as np
 import rclpy
 from fs_interfaces.action import PlantSpot
-from fs_interfaces.msg import HeadStatus, PlantRecord, SafetyStatus
+from fs_interfaces.msg import HeadStatus, Mission, PlantRecord, SafetyStatus
 from rclpy.action import ActionServer, CancelResponse, GoalResponse
 from rclpy.callback_groups import ReentrantCallbackGroup
 from rclpy.executors import MultiThreadedExecutor
@@ -47,9 +61,10 @@ from std_msgs.msg import Float64, Float64MultiArray, String
 from tf2_ros import Buffer, TransformListener
 
 from .. import ik
+from .. import silviculture as sv
 from ..geometry import transform_to_matrix, wrap
 from ..planners import choose_tool
-from ..ros_common import load_site, lookup, param, parse_json, pt, sim_now, wait_sim
+from ..ros_common import LATCHED, load_site, lookup, param, parse_json, pt, sim_now, wait_sim
 
 try:
     from fs_gazebo.models import planting_sdf
@@ -61,7 +76,16 @@ AUGER_ACTIVE = ("lowering", "boring", "retracting")
 PLUG_BOTTOM = 0.12             # plug root ball is 0.12 m long; its top ends flush with the ground
 JAW_TIP = 0.42                 # duckbill_feed_link origin to the closed jaw tip
 TAMP_RING = 0.026              # tamp_link origin to the underside of the ring
+HOPPERS = {      # amendment hoppers, kg (refilled with the plugs)
+    "katar": {"FYM": 800.0, "gypsum": 400.0, "sand": 1500.0, "hydrogel": 10.0},
+    "jaal": {"FYM": 150.0, "gypsum": 40.0, "sand": 250.0, "hydrogel": 3.0},
+    "pahadi": {"FYM": 40.0, "gypsum": 0.0, "sand": 0.0, "hydrogel": 1.5},
+}
+TOOL_RANK = {"auger": 0, "pick": 1, "seedball": 2}
 READY = 0.10                   # duckbill tip and tamp ring wait this far above the ground
+# staggered contour trench 0.45 m wide: its edge 15 cm uphill of the 15 cm pit (Aravali plan) puts
+# its centre 0.45 m uphill of the plant
+TRENCH_OFFSET = 0.075 + 0.15 + 0.225
 CLEAR = 0.35                   # above the seedling's crown: safe to close the jaws and swing away
 
 
@@ -124,8 +148,33 @@ class Mechanism:
     def stow(self):
         pass
 
-    def half_moon(self, hole):
-        pass
+    FRAME = "base_link"                   # robot frame the bore offsets are expressed in
+
+    def offset_target(self, target, off):
+        """World point at robot-frame offset `off` from target."""
+        if abs(off[0]) < 1e-6 and abs(off[1]) < 1e-6:
+            return target
+        T = self.h.frame(self.FRAME)
+        if T is None:
+            return target
+        return (target[0] + T[0, 0] * off[0] + T[0, 1] * off[1], target[1] + T[1, 0] * off[0] + T[1, 1] * off[1])
+
+    def locate_bore(self, target, off):
+        """Put the auger over one bore of a pit cluster."""
+        self.locate(self.offset_target(target, off))
+
+    def catchment(self, hole, kind):
+        """Saucer basin: the head's basin-forming ring presses a ~1 m saucer round the plant (a timed step)."""
+        h = self.h
+        if kind == "basin":
+            h.wait(4.0)
+            h.spawn("basin", hole[0], hole[1], h.ground(*hole))
+
+    def mound(self, hole, height):
+        """Raise a planting mound from the auger spoil before the plug goes in (a timed step)."""
+        h = self.h
+        h.wait(6.0)
+        h.spawn("mound", hole[0], hole[1], h.ground(*hole))
 
     def stage(self, target):
         """While the auger bores: lower the loaded duckbill and the tamp ring to READY."""
@@ -148,10 +197,11 @@ class Mechanism:
             if q is not None:
                 h.cmd_joint(joint, max(0.0, q))
 
-    def plant_with_duckbill(self, hole):
-        """Duckbill over the hole: push it in, open, drop the plug, withdraw past the stem, tamp."""
+    def plant_with_duckbill(self, hole, dz=0.0):
+        """Duckbill over the hole: push it in, open, drop the plug, withdraw past the stem, tamp.
+        dz: where the root collar sits relative to grade (sunken < 0, on a mound > 0)."""
         h = self.h
-        g = h.ground(*hole)
+        g = h.ground(*hole) + dz
         h.feedback("place")
         q = self.lower_to("duckbill_feed_joint", "duckbill_feed_link", JAW_TIP, g - PLUG_BOTTOM - 0.02)
         if q is None:
@@ -179,6 +229,7 @@ class KatarMechanism(Mechanism):
     a loader refills its cups from the rack trays on the trailer."""
     CUPS = 12
     CARRIERS, HOLDERS = ("carousel",), ("duckbill",)
+    FRAME = "trailer_link"
 
     def __init__(self, head):
         super().__init__(head)
@@ -195,7 +246,7 @@ class KatarMechanism(Mechanism):
             self.last_load = t
         home = abs(h.joints.get("turret_joint", 0.0)) < 0.05 and h.joints.get("duckbill_feed_joint", 0.0) < 0.02
         if home and car.get("count", 0) > 0 and car.get("next", -1) >= 0 and not h.holding("duckbill"):
-            k = car["next"]
+            _, k = h.find_cell(("carousel",), h.next_needed(0))
             cur = h.joints.get("carousel_joint", 0.0)
             want = cur + wrap(-2 * math.pi * k / self.CUPS - cur)       # cup k over the chute (+x)
             h.move({"carousel_joint": want}, 0.02, 4.0)
@@ -223,13 +274,13 @@ class KatarMechanism(Mechanism):
     def stage(self, target):
         self.stage_duckbill(target)
 
-    def deliver(self, hole):
+    def deliver(self, hole, dz=0.0):
         h = self.h
         if not h.wait(20.0, lambda: h.holding("duckbill")):
             raise Skip("no plug in the duckbill (carousel empty)")
         h.feedback("turret")
         h.move({"turret_joint": math.pi}, 0.03, 5.0)        # the duckbill takes the auger's place
-        self.plant_with_duckbill(hole)
+        self.plant_with_duckbill(hole, dz)
 
     def stow(self):
         self.h.move({"turret_joint": 0.0}, 0.05, 5.0)
@@ -249,11 +300,11 @@ class JaalMechanism(Mechanism):
             time.sleep(0.2)
             return
         if not h.holding("gripper"):
-            drum = next((d for d in self.DRUMS if h.carrier(d).get("count", 0) > 0), None)
+            drum, cell = h.find_cell(tuple(self.DRUMS), h.next_needed(int(h.holding("duckbill"))))
             if drum is None:
                 time.sleep(0.5)
                 return
-            self.fetch(drum)
+            self.fetch(drum, cell)
         elif (not h.holding("duckbill") and abs(h.joints.get("shuttle_joint", 0.0)) < 0.02
               and h.joints.get("duckbill_feed_joint", 0.0) < 0.02):
             h.move({"finger_a_joint": 0.0, "finger_b_joint": 0.0}, 0.003, 2.0)
@@ -261,10 +312,9 @@ class JaalMechanism(Mechanism):
             h.wait(0.6, lambda: h.holding("duckbill"))
         time.sleep(0.1)
 
-    def fetch(self, drum):
+    def fetch(self, drum, i):
         h = self.h
-        c = h.carrier(drum)
-        i, a = c["next"], c["next_angle"]
+        a = 2 * math.pi * (i % self.POCKETS) / self.POCKETS      # pocket i's angle on its tier
         joint, x = self.DRUMS[drum]
         cur = h.joints.get(joint, 0.0)
         turn = cur + wrap(math.pi / 2 - a)                   # pocket i to the pick window (+y)
@@ -285,13 +335,17 @@ class JaalMechanism(Mechanism):
     def stage(self, target):
         self.stage_duckbill(target)
 
-    def deliver(self, hole):
+    def locate_bore(self, target, off):
+        """Jaal's gantry is fixed: the shuttle moves the auger back along the row for a wider pit."""
+        self.h.move({"shuttle_joint": max(-0.30, min(0.0, off[0]))}, 0.01, 4.0)
+
+    def deliver(self, hole, dz=0.0):
         h = self.h
         if not h.wait(45.0, lambda: h.holding("duckbill")):
             raise Skip("no plug reached the duckbill (drums empty?)")
         h.feedback("shuttle")
         h.move({"shuttle_joint": self.SHUTTLE}, 0.01, 4.0)  # the duckbill takes the auger's place
-        self.plant_with_duckbill(hole)
+        self.plant_with_duckbill(hole, dz)
 
     def stow(self):
         self.h.move({"shuttle_joint": 0.0}, 0.01, 4.0)
@@ -302,6 +356,7 @@ class PahadiMechanism(Mechanism):
     NAMES = ("arm_yaw_joint", "arm_shoulder_joint", "arm_elbow_joint", "arm_wrist_joint")
     FOLD = (-0.9, 2.2, -1.3)
     TRAY = 50
+    GRID = dict(x0=-0.404, y0=-0.234, z=0.655, nx=5, ny=10, pitch=0.052)   # tray cells in base_link (URDF)
     GRIP_OPEN, GRIP_CLOSED = 0.0, 0.016
     CARRIERS, HOLDERS = ("tray",), ("gripper",)
 
@@ -358,23 +413,31 @@ class PahadiMechanism(Mechanism):
         self.reserve -= n
         h.wait(2.0, lambda: h.carrier("tray").get("count", 0) > 0)
 
-    def deliver(self, hole):
+    def deliver(self, hole, dz=0.0):
         h = self.h
         if h.carrier("tray").get("count", 0) == 0:
             if self.reserve <= 0:
                 raise Skip("out of plugs")
             self.swap_tray()
-        cell = h.carrier("tray")["next_world"]
+        _, i = h.find_cell(("tray",), h.current_species)
+        if i is None:
+            raise Skip("tray empty")
+        G = self.GRID
+        local = (G["x0"] + (i // G["ny"]) * G["pitch"], G["y0"] + (i % G["ny"]) * G["pitch"], G["z"])
+        T = h.frame("base_link")
+        if T is None:
+            raise Skip("no pose")
+        cell = (T @ np.array([*local, 1.0]))[:3]
         grasp = (cell[0], cell[1], cell[2] + 0.06)
         h.feedback("pick_plug")
         self.grip(False)
         self.grip_to(grasp, up=0.15)
         self.grip_to(grasp)
         self.grip(True)
-        h.inv_cmd("pick tray next gripper")
+        h.inv_cmd(f"pick tray {i} gripper")
         h.wait(0.5, lambda: h.holding("gripper"))
         self.grip_to(grasp, up=0.25)
-        g = h.ground(*hole)
+        g = h.ground(*hole) + dz
         into = (hole[0], hole[1], g - PLUG_BOTTOM + 0.06)
         h.feedback("place")
         self.grip_to(into, up=0.3)
@@ -395,19 +458,37 @@ class PahadiMechanism(Mechanism):
         h.move({self.NAMES[0]: stow[0]}, 0.08, 8.0)
         h.move(dict(zip(self.NAMES, stow)), 0.08, 6.0)
 
-    def half_moon(self, hole):
+    def scrape(self, points):
+        """Drag the auger tip just below the surface through a list of world points."""
         h = self.h
-        d = h.downhill(*hole)
-        c = np.array(hole[:2]) + d * 0.45
-        try:
+        for c in points:
             q = ik.solve(self.to_base((c[0], c[1], h.ground(*c))), clearance=-0.03)
             self.arm(q, 0.06, 8.0)
-            for sweep in (0.25, -0.25, 0.0):
-                h.cmd_joint(self.NAMES[0], h.joints.get(self.NAMES[0], q[0]) + sweep)
-                h.wait(1.2)
+            h.wait(0.6)
+
+    def catchment(self, hole, kind):
+        """Half-moon below the plant, or a 2 m staggered contour trench just uphill of it."""
+        h = self.h
+        d = h.downhill(*hole)
+        along = np.array([-d[1], d[0]])                  # the contour
+        try:
+            if kind == "halfmoon":
+                c = np.array(hole[:2]) + d * 0.45
+                q = ik.solve(self.to_base((c[0], c[1], h.ground(*c))), clearance=-0.03)
+                self.arm(q, 0.06, 8.0)
+                for sweep in (0.25, -0.25, 0.0):
+                    h.cmd_joint(self.NAMES[0], h.joints.get(self.NAMES[0], q[0]) + sweep)
+                    h.wait(1.2)
+            elif kind == "trench":
+                c = np.array(hole[:2]) - d * TRENCH_OFFSET      # trench edge 15 cm uphill of the pit
+                self.scrape([c + along * a for a in (-0.9, -0.3, 0.3, 0.9)])
         except (ik.Unreachable, Skip):
             h.wait(5.0)
-        h.spawn("halfmoon", hole[0], hole[1], h.ground(*hole), math.atan2(d[1], d[0]))
+        if kind == "halfmoon":
+            h.spawn("halfmoon", hole[0], hole[1], h.ground(*hole), math.atan2(d[1], d[0]))
+        elif kind == "trench":
+            c = np.array(hole[:2]) - d * TRENCH_OFFSET
+            h.spawn("trench", c[0], c[1], h.ground(*c), math.atan2(along[1], along[0]))
 
 
 MECHANISMS = {"katar": KatarMechanism, "jaal": JaalMechanism, "pahadi": PahadiMechanism}
@@ -432,6 +513,11 @@ class PlantingHead(Node):
         self.rail = (float(param(self, "rail_min", -1.8)), float(param(self, "rail_max", 0.6)))
         self.probe_sigma = float(param(self, "probe_sigma", 0.03))
         self.rng = np.random.default_rng(int(param(self, "seed", 3)))
+        self.region = param(self, "region", "") or self.site.get("region") or ""
+        self.deep_kit = bool(param(self, "deep_auger", False))
+        self.hopper = dict(HOPPERS[self.kind])
+        elev = self.site.soil_map.layers["elevation"]
+        self.elev_range = (float(elev.min()), float(elev.max()))
 
         self.cb = ReentrantCallbackGroup()
         self.tf = Buffer()
@@ -452,12 +538,19 @@ class PlantingHead(Node):
         self.hold = False                 # safety tool hold
         self.desired = {}                 # last commanded joint targets, re-sent after a hold
         self.auger_held = False
+        self.spot_order, self.spot_species = [], {}   # spots needing a plug, in planting order -> species
+        self.done_spots = set()
+        self.labels, self.occ, self.held = {}, {}, {}  # carrier -> {cell: species}; carrier -> occ; holder -> species
+        self.label_lock = threading.RLock()
+        self.current_species = None
+        self.dropped = None
 
         self.create_subscription(JointState, "joint_states", self.on_joints, 20, callback_group=self.cb)
         self.create_subscription(String, "auger/status", self.on_auger, 20, callback_group=self.cb)
         self.create_subscription(String, "plugs/status", self.on_plugs, 10, callback_group=self.cb)
         self.create_subscription(Float64MultiArray, "head/refill", self.on_refill, 10, callback_group=self.cb)
         self.create_subscription(SafetyStatus, "safety/status", self.on_safety, 10, callback_group=self.cb)
+        self.create_subscription(Mission, "mission", self.on_mission, LATCHED, callback_group=self.cb)
         self.auger_pub = self.create_publisher(String, "auger/cmd", 10)
         self.plug_pub = self.create_publisher(String, "plugs/cmd", 20)
         self.status_pub = self.create_publisher(HeadStatus, "head/status", 10)
@@ -472,7 +565,9 @@ class PlantingHead(Node):
                                    callback_group=self.cb)
         threading.Thread(target=self.feeder_loop, daemon=True).start()
         self.get_logger().info(f"{self.kind} head ready: {self.plugs} plugs, {self.water:.0f} L, "
-                               f"{self.seedballs} seed balls, dose {self.dose} L")
+                               f"{self.seedballs} seed balls; region "
+                               + (f"{self.region} ({sv.REGIONS[self.region].title})" if self.region in sv.REGIONS
+                                  else f"none (fixed {self.depth * 100:.0f} cm holes, {self.dose} L)"))
 
     # ------------------------------------------------------------------ io
     def on_joints(self, m: JointState):
@@ -489,6 +584,85 @@ class PlantingHead(Node):
         d = parse_json(m.data)
         if d:
             self.inv = d
+            new = False
+            with self.label_lock:
+                for name, c in d.get("carriers", {}).items():
+                    occ = c.get("occ")
+                    if occ is None:
+                        continue
+                    L = self.labels.setdefault(name, {})
+                    for i in [i for i in L if i >= len(occ) or occ[i] != "1"]:
+                        del L[i]
+                    self.occ[name] = occ
+                    new = new or any(ch == "1" and i not in L for i, ch in enumerate(occ))
+                if new:
+                    self.relabel()
+
+    # ------------------------------------------------------------------ species bookkeeping
+    def on_mission(self, m: Mission):
+        order, sp = [], {}
+        for s in m.spots:
+            if s.tool in ("skip", "seedball"):
+                continue
+            p = self.prescription(self.site.soil_map.sample(s.position.x, s.position.y), False, s.id)
+            if p.method.tool != "seedball":
+                order.append(s.id)
+                sp[s.id] = p.species
+        with self.label_lock:
+            self.spot_order, self.spot_species = order, sp
+            self.relabel()
+        if sp:
+            self.get_logger().info("species plan: " + ", ".join(f"{k} {v}" for k, v in Counter(sp.values()).most_common()))
+
+    def demand(self):
+        return [self.spot_species[i] for i in self.spot_order if i not in self.done_spots]
+
+    def next_needed(self, ahead=0):
+        """Species of the ahead-th upcoming spot that has no plug staged yet."""
+        d = self.demand()
+        return d[ahead] if ahead < len(d) else None
+
+    def relabel(self):
+        """Give every plug in the store that has no species yet the species the upcoming spots need,
+        in planting order (the nursery loads the trays that way)."""
+        if not self.spot_species:
+            return
+        with self.label_lock:
+            have = Counter([v for v in self.held.values() if v] + [v for L in self.labels.values() for v in L.values()])
+            need = []
+            for sp in self.demand():
+                if have[sp] > 0:
+                    have[sp] -= 1
+                else:
+                    need.append(sp)
+            fallback = Counter(self.spot_species.values()).most_common(1)[0][0]
+            k = 0
+            for name in sorted(self.occ):
+                L = self.labels.setdefault(name, {})
+                for i, ch in enumerate(self.occ[name]):
+                    if ch == "1" and i not in L:
+                        L[i] = need[k] if k < len(need) else fallback
+                        k += 1
+
+    def find_cell(self, carriers, species):
+        """(carrier, cell) holding a plug of `species`, else any full cell (a substitution), else (None, None)."""
+        with self.label_lock:
+            first = (None, None)
+            for name in carriers:
+                occ = self.occ.get(name) or ""
+                if not occ:                       # no occupancy yet: fall back to the inventory's next
+                    c = self.carrier(name)
+                    if c.get("next", -1) >= 0 and first[0] is None:
+                        first = (name, c["next"])
+                    continue
+                for i, ch in enumerate(occ):
+                    if ch != "1":
+                        continue
+                    if first[0] is None:
+                        first = (name, i)
+                    if species is not None and self.labels.get(name, {}).get(i) == species:
+                        return name, i
+            return first
 
     def carrier(self, name) -> dict:
         return self.inv.get("carriers", {}).get(name, {})
@@ -497,7 +671,22 @@ class PlantingHead(Node):
         return bool(self.inv.get("holders", {}).get(holder, False))
 
     def inv_cmd(self, text: str):
-        """Tell fs::PlugInventory what the mechanism just did, then wait for the status to show it."""
+        """Tell fs::PlugInventory what the mechanism just did, then wait for the status to show it.
+        The species labels follow the plug."""
+        w = text.split()
+        with self.label_lock:
+            if w[0] == "pick" and len(w) == 4:
+                cell = w[2]
+                if cell == "next":
+                    occ = self.occ.get(w[1], "")
+                    cell = str(occ.find("1")) if "1" in occ else "-1"
+                self.held[w[3]] = self.labels.get(w[1], {}).pop(int(cell), None)
+            elif w[0] == "move" and len(w) == 3:
+                self.held[w[2]] = self.held.pop(w[1], None)
+            elif w[0] == "drop" and len(w) == 2:
+                self.dropped = self.held.pop(w[1], None)
+            elif w[0] == "empty" and len(w) >= 2:
+                self.labels.get(w[1], {}).clear()
         t = self.inv.get("t", 0.0)
         self.plug_pub.publish(String(data=text))
         wait_sim(self, 1.0, lambda: self.inv.get("t", 0.0) > t + 0.15)
@@ -508,6 +697,7 @@ class PlantingHead(Node):
         self.mech.refill(int(v[0]))
         self.water += float(v[1])
         self.seedballs += int(v[2])
+        self.hopper = dict(HOPPERS[self.kind])
         self.get_logger().info(f"refilled: {self.mech.stock()} plugs, {self.water:.0f} L water")
 
     def _pub(self, joint: str, value: float):
@@ -663,6 +853,38 @@ class PlantingHead(Node):
         self.auger_cmd("retract")
         self.wait(20.0, lambda: self.auger_t > t0 + 0.2 and self.auger.get("phase") == "idle")
 
+    def prescription(self, smp, half_moon, seq):
+        if self.region in sv.REGIONS:
+            lo, hi = self.elev_range
+            s = dict(smp, elev_frac=(smp["elevation"] - lo) / max(hi - lo, 1e-6))
+            return sv.prescribe(self.region, self.kind, s, seq, self.deep_kit)
+        m = sv.Method(pit_depth=self.depth, water_l=self.dose,
+                      catchment="halfmoon" if half_moon and self.kind == "pahadi" else "none")
+        return sv.Prescription("", "", self.species[seq % len(self.species)], m, ((0.0, 0.0),))
+
+    def pour(self, litres, phase):
+        dose = min(litres, self.water)
+        if dose > 0:
+            self.feedback(phase)
+            self.wait(dose / self.pump)
+            self.water -= dose
+        return dose
+
+    def backfill(self, m, depth, dev):
+        """Refill the hole below the plug with the spoil and the prescribed amendments."""
+        refill = max(0.0, depth - PLUG_BOTTOM - max(0.0, -m.plant_depth))
+        if not m.backfill and refill < 0.05:
+            return
+        self.feedback("backfill")
+        kg = 0.0
+        for k, want in m.backfill:
+            have = self.hopper.get(k, 0.0)
+            if have + 1e-9 < want:
+                dev.append(f"out of {k}")
+            self.hopper[k] = max(0.0, have - want)
+            kg += min(want, have)
+        self.wait(2.0 + kg / 2.5 + refill * 8.0)      # screw feeder ~2.5 kg/s; the spoil is pushed back in
+
     def seed(self, hole):
         self.feedback("seed")
         self.wait(4.0)
@@ -684,14 +906,22 @@ class PlantingHead(Node):
         rec = PlantRecord()
         rec.robot, rec.spot_id = self.ns, g.spot_id
         rec.intended = pt(g.target.x, g.target.y, self.ground(*target))
-        rec.species = self.species[self.seq % len(self.species)]
         smp = self.site.soil_map.sample(*target)
         rec.soil = smp["soil"]["name"]
         rec.rock_depth_m = smp["rock_depth"]
-        tool = g.tool
-        if tool in ("", "auto"):
+        p = self.prescription(smp, g.half_moon, g.spot_id)
+        m = p.method
+        rec.species, rec.region, rec.microsite = p.species, p.region, p.microsite
+        self.current_species, self.dropped = p.species, None
+        dev = list(p.deviations)
+        # the most cautious of: the prescription, the navigator's survey-based choice, and Pahadi's probe
+        tool = m.tool
+        if g.tool in TOOL_RANK and TOOL_RANK[g.tool] > TOOL_RANK[tool]:
+            tool = g.tool
+        if self.kind == "pahadi" and tool == "auger":
             probe = smp["rock_depth"] + self.rng.normal(0, self.probe_sigma)
-            tool = choose_tool(probe, self.depth) if self.kind == "pahadi" else "auger"
+            t2 = choose_tool(probe, m.pit_depth)
+            tool = t2 if TOOL_RANK[t2] > TOOL_RANK[tool] else tool
         energy = 0.0
         hole = None
         try:
@@ -700,24 +930,34 @@ class PlantingHead(Node):
             if tool == "seedball" and self.seedballs < 3:
                 raise Skip("out of seed balls")
             self.feedback("locate")
-            self.mech.locate(target)
-            if g.track_ground and self.kind == "katar":
-                self.track_target = target
             if tool == "seedball":
+                self.mech.locate(target)
                 T = self.frame("auger_link")
                 hole = (target[0], target[1]) if T is None else (T[0, 3], T[1, 3])
                 self.seed(hole)
                 rec.outcome, rec.tool = "seeded", "seedball"
             else:
-                self.feedback("pick" if tool == "pick" else "bore")
-                self.mech.stage(target)
-                result = self.bore("pick" if tool == "pick" else "bore", self.depth)
-                energy += float(self.auger.get("energy_kj", 0.0))
-                if result == "refusal" and self.kind == "pahadi":
-                    self.feedback("pick")
-                    tool = "pick"
-                    result = self.bore("pick", self.depth)
+                verb = "pick" if tool == "pick" else "bore"
+                bores = list(p.bores[1:]) + [p.bores[0]] if tool == "auger" else [p.bores[0]]
+                for k, off in enumerate(bores):            # widening bores first; the planting hole last
+                    last = k == len(bores) - 1
+                    self.mech.locate_bore(target, off)
+                    if g.track_ground and self.kind == "katar":
+                        self.track_target = self.mech.offset_target(target, off)
+                    if last:
+                        self.mech.stage(target)
+                    self.feedback(verb if last else "widen")
+                    result = self.bore(verb, m.pit_depth)
                     energy += float(self.auger.get("energy_kj", 0.0))
+                    if result == "refusal" and self.kind == "pahadi" and last:
+                        self.feedback("pick")
+                        tool = verb = "pick"
+                        result = self.bore("pick", m.pit_depth)
+                        energy += float(self.auger.get("energy_kj", 0.0))
+                    if not last:
+                        if result != "bored":
+                            dev.append(f"widening bore {k + 1} stopped at {float(self.auger.get('depth', 0)) * 100:.0f} cm")
+                        self.retract()
                 hole = tuple(self.auger.get("hole", target))[:2]
                 reached = float(self.auger.get("depth", 0.0))
                 rec.hole_depth_m = reached
@@ -730,18 +970,32 @@ class PlantingHead(Node):
                     else:
                         raise Skip(f"auger {result} at {reached * 100:.0f} cm (stone or rock)")
                 else:
-                    self.mech.deliver(hole)
+                    if self.auger.get("in_pan") or smp.get("hardpan", 9.0) < reached:
+                        rec.reason = f"kankar pan at {smp['hardpan'] * 100:.0f} cm bored through"
+                    pre = self.pour(m.pre_water_l, "pre_water") if smp["moisture"] < m.min_moisture else 0.0
+                    if pre:
+                        dev.append(f"soil at {smp['moisture']:.2f} moisture: pit pre-watered")
+                    self.backfill(m, reached, dev)
+                    if m.catchment == "mound":
+                        self.feedback("mound")
+                        self.mech.mound(hole, m.plant_depth)
+                    self.mech.deliver(hole, m.plant_depth)
                     self.plugs -= 1
-                    self.feedback("water")
-                    dose = min(self.dose, self.water)
-                    self.wait(dose / self.pump)
-                    self.water -= dose
-                    rec.water_l = dose
+                    self.done_spots.add(g.spot_id)                 # its plug is in: the feeder moves on
+                    if self.dropped and self.dropped != p.species and self.spot_species:
+                        dev.append(f"planted {self.dropped}: no {p.species} left on board")
+                        rec.species = self.dropped
+                    if m.catchment not in ("none", "mound"):
+                        self.feedback(m.catchment)
+                        self.mech.catchment(hole, m.catchment)
+                    dose = self.pour(m.water_l, "water")
+                    if m.mulch != "none":
+                        self.feedback("mulch")
+                        self.wait(3.0)
+                        self.spawn(f"mulch_{m.mulch}", hole[0], hole[1], self.ground(*hole) + min(0.0, m.plant_depth))
+                    rec.water_l = dose + pre
                     rec.outcome, rec.tool = "planted", tool
                     self.planted += 1
-                    if g.half_moon:
-                        self.feedback("halfmoon")
-                        self.mech.half_moon(hole)
             self.track_target = None
             self.feedback("stow")
             self.mech.stow()
@@ -751,6 +1005,9 @@ class PlantingHead(Node):
             rec.outcome, rec.tool, rec.reason = "skipped", "none", str(e)
             self.mech.stow()
             success = False
+        self.done_spots.add(g.spot_id)
+        rec.method = p.summary() if rec.outcome == "planted" else ("seed balls" if rec.outcome == "seeded" else "")
+        rec.deviations = "; ".join(dev)
 
         self.feedback("log")
         if hole is None:
@@ -768,7 +1025,9 @@ class PlantingHead(Node):
         self.set_phase("idle")
         lvl = self.get_logger().info if success else self.get_logger().warning
         lvl(f"spot {g.spot_id}: {rec.outcome} ({rec.tool}) err {rec.error_m * 100:.1f} cm, "
-            f"{rec.cycle_time_s:.1f} s, {rec.bore_energy_kj:.1f} kJ {rec.reason} | {self.mech.stock()} plugs left")
+            f"{rec.cycle_time_s:.1f} s, {rec.bore_energy_kj:.1f} kJ {rec.reason} | {self.mech.stock()} plugs left"
+            + (f"\n    {p.region} / {rec.microsite}: {rec.species}; {rec.method}"
+               + (f"\n    deviations: {rec.deviations}" if rec.deviations else "") if p.region else ""))
         gh.succeed()
         res = PlantSpot.Result()
         res.record, res.success = rec, success

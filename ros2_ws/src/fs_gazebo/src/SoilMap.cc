@@ -59,6 +59,7 @@ void SoilMap::Load(const std::string &path)
       else if (layer == "soil") readLayer(soil_);
       else if (layer == "rock_depth") readLayer(rock_);
       else if (layer == "moisture") readLayer(moisture_);
+      else if (layer == "hardpan") readLayer(hardpan_);
       else { std::vector<float> skip; readLayer(skip); }
     }
   }
@@ -67,6 +68,7 @@ void SoilMap::Load(const std::string &path)
   if (soil_.empty()) soil_.assign(static_cast<size_t>(nx_) * ny_, 1.0f);
   if (rock_.empty()) rock_.assign(static_cast<size_t>(nx_) * ny_, 1.0f);
   if (moisture_.empty()) moisture_.assign(static_cast<size_t>(nx_) * ny_, 0.15f);
+  if (hardpan_.empty()) hardpan_.assign(static_cast<size_t>(nx_) * ny_, 9.0f);
 
   soils_ = DefaultSoils();
   if (!table.empty())
@@ -116,6 +118,7 @@ SoilSample SoilMap::Sample(double x, double y) const
   s.elevation = Bilinear(elevation_, x, y);
   s.rockDepth = std::max(0.0, Bilinear(rock_, x, y));
   s.moisture = std::clamp(Bilinear(moisture_, x, y), 0.0, 0.6);
+  s.hardpan = std::max(0.0, Bilinear(hardpan_, x, y));
   return s;
 }
 

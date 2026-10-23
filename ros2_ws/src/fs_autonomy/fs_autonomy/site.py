@@ -77,8 +77,13 @@ class SoilMap:
         return self.soils[min(max(k, 0), len(self.soils) - 1)]
 
     def sample(self, x: float, y: float) -> dict:
+        """Everything the soil map knows at a point. Optional layers default to 'absent':
+        hardpan (depth to a kankar pan, m; 9 = none), esp (exchangeable sodium %), waterlog (0..1)."""
+        opt = {k: (float(self.bilinear(k, x, y)) if k in self.layers else d)
+               for k, d in (("hardpan", 9.0), ("esp", 0.0), ("waterlog", 0.0))}
         return {"soil": self.soil_at(x, y), "elevation": float(self.elevation(x, y)),
-                "rock_depth": float(self.rock_depth(x, y)), "moisture": float(self.bilinear("moisture", x, y))}
+                "rock_depth": float(self.rock_depth(x, y)), "moisture": float(self.bilinear("moisture", x, y)),
+                **opt}
 
     def normal(self, x: float, y: float):
         h = max(self.res, 0.05)

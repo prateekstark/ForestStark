@@ -8,6 +8,7 @@ import pytest
 import yaml
 
 from fs_gazebo.models import MODELS, planting_sdf
+from fs_gazebo import regions
 from fs_gazebo.sites import BUILDERS, generate, hill_height
 
 
@@ -21,9 +22,38 @@ def test_site_files(site, tmp_path):
     assert survey["name"] == site and survey["spawn"]
     lines = (tmp_path / f"{site}.soilmap").read_text().splitlines()
     nx, ny = map(int, next(ln for ln in lines if ln.startswith("size")).split()[1:])
-    assert sum(ln.startswith("layer") for ln in lines) == 4
+    layers = [ln.split()[1] for ln in lines if ln.startswith("layer")]
+    assert layers[:4] == ["elevation", "soil", "rock_depth", "moisture"]
     assert len(lines) > 4 * ny
-    assert data["origin"]
+    assert data["origin"] and data["region"]
+
+
+@pytest.mark.parametrize("region", sorted(regions.REGIONS))
+def test_every_region_generates_its_sites(region, tmp_path):
+    R = regions.REGIONS[region]
+    for site in R.sites:
+        out = tmp_path / site
+        data = generate(site, out, region=region)
+        assert data["region"] == region and data["origin"]["lat"] == pytest.approx(R.origin[0])
+        text = (out / f"{site}.soilmap").read_text()
+        layers = [ln.split()[1] for ln in text.splitlines() if ln.startswith("layer")]
+        assert ("hardpan" in layers) == (R.hardpan is not None) and ("esp" in layers) == (R.esp is not None)
+        ET.parse(out / f"{site}.sdf")
+
+
+def test_region_layers_hit_their_cover(tmp_path):
+    from fs_autonomy.site import SoilMap
+    generate("open_field", tmp_path, region="ignp_canal")
+    sm = SoilMap(tmp_path / "open_field.soilmap")
+    R = regions.REGIONS["ignp_canal"]
+    assert (sm.layers["esp"] > 15).mean() == pytest.approx(R.esp_cover + 0.1, abs=0.15)   # patches plus their margins
+    assert (sm.layers["hardpan"] < 9).mean() == pytest.approx(R.hardpan_cover, abs=0.05)
+    assert (sm.layers["waterlog"] > 0.5).mean() == pytest.approx(R.waterlog_cover, abs=0.08)
+
+
+def test_unknown_region_or_site_is_refused(tmp_path):
+    with pytest.raises(ValueError):
+        generate("hill_slope", tmp_path, region="thar_arid")
 
 
 def test_hill_heightmap_matches_soil_map(tmp_path):

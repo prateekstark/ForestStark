@@ -38,6 +38,19 @@ def on(v) -> bool:
     return str(v).lower() in ("1", "true", "yes", "on")
 
 
+def region_setup(kind: str, site: str, c: dict) -> tuple:
+    """Region for a launch (argument `region`, or the robot's default) and its spacing, row spacing."""
+    from fs_autonomy import silviculture as sv
+    from fs_gazebo import regions
+    region = c.get("region") or regions.DEFAULT[site]
+    if region not in sv.ROBOT_REGIONS[kind]:
+        raise RuntimeError(f"{kind} does not plant in region '{region}'; choose from {', '.join(sv.ROBOT_REGIONS[kind])}")
+    spacing, rows = sv.REGIONS[region].spacing[site]
+    spacing = float(c["spacing"]) if c.get("spacing") else spacing
+    rows = float(c["row_spacing"]) if c.get("row_spacing") else rows
+    return region, spacing, rows
+
+
 def make_site(site: str, **kw) -> Path:
     from fs_gazebo.sites import generate
     key = hashlib.sha1(json.dumps(kw, sort_keys=True).encode()).hexdigest()[:8]
@@ -83,20 +96,22 @@ def _stop_gazebo(context, *args, **kwargs):
 
 
 def robot_description(kind: str, ns: str, soil_map: Path, lidar: bool, gnss_sigma: float = 0.02,
-                      inspect: bool = False) -> str:
+                      inspect: bool = False, xacro_args: dict | None = None) -> str:
     """URDF from xacro. inspect adds a fixed camera beside the plant handling that saves frames to
     /tmp/fs_inspect (topic /model/<ns>/inspect_cam)."""
     path = Path(get_package_share_directory("fs_description")) / "urdf" / f"{kind}.urdf.xacro"
     doc = xacro.process_file(str(path), mappings={"ns": ns, "soil_map": str(soil_map),
                                                   "lidar": "true" if lidar else "false",
                                                   "gnss_sigma": str(gnss_sigma),
-                                                  "inspect_cam": "true" if inspect else "false"})
+                                                  "inspect_cam": "true" if inspect else "false",
+                                                  **(xacro_args or {})})
     return doc.toxml()
 
 
-def spawn_robot(kind: str, ns: str, site_dir: Path, site: dict, lidar: bool, inspect: bool = False):
+def spawn_robot(kind: str, ns: str, site_dir: Path, site: dict, lidar: bool, inspect: bool = False,
+                xacro_args: dict | None = None):
     pose = next(s for s in site["spawn"] if s["name"] == ns)
-    desc = robot_description(kind, ns, site_dir / site["soil_map"], lidar, inspect=inspect)
+    desc = robot_description(kind, ns, site_dir / site["soil_map"], lidar, inspect=inspect, xacro_args=xacro_args)
     return [
         Node(package="robot_state_publisher", executable="robot_state_publisher", namespace=ns, output="log",
              parameters=[{"robot_description": desc, "frame_prefix": f"{ns}/", "use_sim_time": True}]),
@@ -151,8 +166,10 @@ def robot_core(kind: str, ns: str, site_file: Path, world: str, head: dict, gnss
     common = {"site_file": str(site_file), "robot": ns, "use_sim_time": True}
     scans = SCANS[kind] if (lidar or kind in LIDAR_ALWAYS) else [""]
     return [
-        Node(package="fs_autonomy", executable="safety_monitor", namespace=ns, output="screen",
-             parameters=[{**common, "robot_type": kind, "scans": scans, "peers": list(peers) or [""]}]),
+        # restarted if it ever dies; until it is back nothing reaches the wheels (the drive's
+        # command timeout stops the robot), so a crash fails safe
+        Node(package="fs_autonomy", executable="safety_monitor", namespace=ns, output="screen", respawn=True,
+             respawn_delay=1.0, parameters=[{**common, "robot_type": kind, "scans": scans, "peers": list(peers) or [""]}]),
         Node(package="fs_autonomy", executable="gnss_degrader", namespace=ns, output="screen",
              parameters=[{**common, "mode": gnss_mode, "dropouts_per_hour": float(dropouts), "seed": seed}]),
         Node(package="fs_autonomy", executable="localization", namespace=ns, output="screen",

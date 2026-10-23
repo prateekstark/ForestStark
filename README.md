@@ -109,7 +109,38 @@ ros2 topic pub --once /fleet/estop std_msgs/msg/Bool "{data: true}"      # stop 
 ros2 run fs_autonomy operator release jaal_1                            # release one
 ```
 
-## 2c. CAD
+## 2c. Regional planting methods
+
+The robots plant the way each region's soil and climate call for. Six regions are built in: five
+of Rajasthan's agro-climatic zones and the Himalayan mid-hills. For every spot the planting head
+reads the soil map under the target and looks up the region's prescription in
+`fs_autonomy/silviculture.py`. The soil map covers soil, moisture, rock, sodicity, kankar pan and
+waterlogging. The prescription covers species, pit, backfill, planting depth, water catchment,
+mulch and water. The robot then does each step with its own mechanisms. Full tables and sources
+are in [docs/planting_methods.md](docs/planting_methods.md).
+
+| Region (`region:=`) | Robots | What changes |
+|---|---|---|
+| `eastern_plain` Jaipur (default for Katar, Jaal) | Katar, Jaal | 45 cm pits (5 or 3 bores), FYM + hydrogel, saucer basin, 3 L; mounds in waterlogged hollows |
+| `thar_arid` Jodhpur | Jaal | CAZRI 50 cm pit, saucer basin, plant sunken 8 cm, stone mulch, 5 L plus 5 L pre-watering a dry pit; salt-tolerant species and gypsum on saline patches |
+| `ignp_canal` Sri Ganganagar | Katar, Jaal | CSSRI auger holes 1.0–1.2 m through the kankar pan with gypsum, FYM and sand (Katar's deep-auger kit); mounds on canal seepage |
+| `hadoti_vertisol` Kota | Katar, Jaal | 60 cm pits backfilled with FYM and sand for drainage, no basin |
+| `aravalli_hills` Udaipur (default for Pahadi) | Pahadi | Staggered contour trench uphill of each plant, pick in stony soil, seed balls on rock |
+| `himalayan_midhills` Garhwal | Pahadi | No trenches on a 24° slope: half-moon, organic mulch; oak, deodar, alder by microsite |
+
+```bash
+ros2 launch fs_bringup jaal.launch.py robots:=1 region:=thar_arid
+ros2 launch fs_bringup katar.launch.py region:=ignp_canal
+ros2 launch fs_bringup pahadi.launch.py region:=himalayan_midhills
+```
+
+Each plant record (`/plants/records`, `plants.csv`) carries the region, the microsite, the species,
+what was done, and any deviation from the prescription. For example, "60 cm prescribed, 55 cm is
+the auger's reach", "soil at 0.05 moisture: pit pre-watered", "kankar pan at 65 cm bored
+through". The species come from the mission plan: the head labels the plugs in the store in
+planting order, and each feeder picks the plug the next spot needs.
+
+## 2d. CAD
 
 ```bash
 python3 -m venv cad/.venv && cad/.venv/bin/pip install cadquery     # once
@@ -184,7 +215,7 @@ flowchart LR
 | `localization/odom` + TF `map → ns/odom → ns/base_link` | `Odometry` | localization → all |
 | `cmd_vel`, `joint/<j>/cmd_pos`, `auger/cmd` | commands | autonomy → Gazebo |
 | `auger/status`, `terramechanics` | JSON `String` | Gazebo soil systems → head, traction monitor |
-| `plugs/status` / `plugs/cmd` | JSON `String` / `String` | fs::PlugInventory ↔ planting_head |
+| `plugs/status` / `plugs/cmd` | JSON `String` / `String` | fs::PlugInventory ↔ planting_head (status includes per-cell occupancy) |
 | `cmd_vel_nav` → `cmd_vel` | `Twist` | navigator → safety_monitor → Gazebo |
 | `safety/status`, `/fleet/estop` | `SafetyStatus`, `Bool` | safety_monitor → navigator, head, RViz; operator → all |
 | `plant_spot` | `PlantSpot` action | navigator → planting_head |
@@ -201,7 +232,7 @@ Gazebo's rigid-body friction cannot represent soil, so the wheel and track colli
 - **Normal load:** quasi-static least-norm distribution of the whole model's weight over the contacts touching the ground. On a slope this gives load transfer to the downhill side.
 - **Sinkage and motion resistance (Bekker):** `z = (p / (kc/b + kφ))^(1/n)` and `Rc = b(kc/b + kφ) z^(n+1)/(n+1)`.
 - **Traction (Janosi–Hanamoto):** `F = (A c + W tanφ)[1 − K/(i l)(1 − e^(−il/K))]`, longitudinal from slip and lateral from side-slip. A LuGre-type bristle state lets a stopped machine hold on a slope instead of creeping.
-- **Auger cutting (`fs::AugerSoil`):** specific energy `e = e_b · (1.6 − 2.4·moisture)` and feed `min(f_max, η P / (e A))`, slowed when the thrust `0.012 e A` exceeds what the head can push. The reaction goes into the robot through the joints. Refusal at the soil map's depth to rock; percussive-pick mode through rock.
+- **Auger cutting (`fs::AugerSoil`):** specific energy `e = e_b · (1.6 − 2.4·moisture)` and feed `min(f_max, η P / (e A))`, slowed when the thrust `0.012 e A` exceeds what the head can push. The reaction goes into the robot through the joints. Refusal at the soil map's depth to rock; percussive-pick mode through rock. A kankar (calcic) pan from the soil map's `hardpan` layer is cut at 3.5 times the soil's energy, so the feed drops sharply in the pan.
 
 Soil constants (Wong, *Theory of Ground Vehicles*) and boring energies:
 
@@ -238,12 +269,15 @@ Design points that came out of building and running it:
 7. **Gazebo's NavSat noise is in degrees, not metres.** A 0.02 "m" sigma produced kilometre-scale jumps until it was converted (`common.xacro`).
 8. **The plug's path, not the auger, sets the floor on Katar's and Jaal's cycle once the mechanisms are modelled.** The duckbill stroke and the tamp take about 5 s after the auger is out. Lowering the loaded duckbill to just above the ground while the auger bores, and closing the jaws only once they clear the seedling's crown, took Katar from 24 s to 18 s per spot.
 9. **Ogre2's heightmap shader fails under headless EGL** as soon as a camera renders the hill world. Pahadi's terrain is drawn as a generated mesh (`hill_slope_terrain.obj`), and the heightmap remains the collision shape.
-10. **Two more Gazebo pitfalls.** DART ignores `<heightmap><pos>` (the terrain model itself is raised instead), and `/world/<w>/create` applies the request's `pose` over the pose in the SDF. Before the planting head set the request pose, every sapling was stacked at the world origin, where Jaal's lidar saw them as an obstacle.
+10. **The planting method, not the machine, sets the pace once the science is followed.** A regional pit of three to five bores, a backfill, a basin and the full water dose take 76-176 s a spot (Thar sand 80 s and 74 kJ; Hadoti black cotton 120 s and 330 kJ; CSSRI auger holes through a kankar pan 96-108 s and 440-490 kJ), against 17-18 s for the single 25-30 cm hole. See [docs/planting_methods.md](docs/planting_methods.md).
+11. **A kankar pan needs the auger's reaction on the machine, not the bit.** In the pan the thrust reaches the 8 kN limit; applied to the light bit link it destabilised the solver and reset the feed joint. `fs::AugerSoil` now applies the reaction to the auger's mounting link (`<reaction_link>`).
+12. **Two more Gazebo pitfalls.** DART ignores `<heightmap><pos>` (the terrain model itself is raised instead), and `/world/<w>/create` applies the request's `pose` over the pose in the SDF. Before the planting head set the request pose, every sapling was stacked at the world origin, where Jaal's lidar saw them as an obstacle.
 
 ## 6. Limitations
 
 - Terramechanics is applied per contact with a quasi-static load split. There is no bulldozing, multi-pass compaction or rut geometry, and tracks are modelled as three road-wheel segments per side.
 - Stones are visual only in Gazebo; the soil map tells the auger where rock is.
+- Of the regional steps, the auger bores, depths, water and plug handling are simulated; the saucer basin, mound and mulch are timed steps that leave a model behind, and amendments are counted in hoppers but do not change the soil. Survival is not modelled, so the prescriptions are judged by their sources, not by the simulation. Pahadi plants at 1.25 m from its path, the most its gripper can reach down into a hole on the downhill side, so the Aravalli contour trench (0.45 m uphill of the plant) comes about 6 cm under the edge of its track; a field machine would need a longer arm or would dig the trench from the next row.
 - Plugs are visuals that the inventory moves between links. They are not dynamic bodies, so a dropped or crushed plug cannot be simulated. A plug is planted by spawning a sapling model at the hole.
 - Gazebo's mass does not change as plugs and water are used. The stability monitor, and Katar's trailer-load diagram in the browser lab, account for it in software.
 - The safety monitor is not a certified safety function (ISO 25119 / ISO 18497). It tells people from objects only by whether they move, uses planar lidars, and has blind spots: behind Pahadi's rear module, and ahead of Katar's tractor, where the driver is responsible.

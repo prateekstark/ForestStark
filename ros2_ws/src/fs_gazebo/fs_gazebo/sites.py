@@ -31,6 +31,8 @@ from pathlib import Path
 import numpy as np
 import yaml
 
+from . import regions
+
 # Bekker constants (Wong) + specific boring energy, MJ/m^3. Same table as SoilModel.hh.
 SOILS = [
     ("dry_sand", 1.10, 0.99, 1528.43, 1.04, 28.0, 0.025, 2.5),
@@ -82,9 +84,11 @@ class Grid:
             f.write(f"size {self.nx} {self.ny}\n")
             for i, s in enumerate(SOILS):
                 f.write(f"soil {i} " + " ".join(str(v) for v in s) + "\n")
-            for lname, fmt in (("elevation", "%.3f"), ("soil", "%d"), ("rock_depth", "%.3f"), ("moisture", "%.3f")):
-                f.write(f"layer {lname}\n")
-                np.savetxt(f, self.layers[lname], fmt=fmt)
+            for lname, fmt in (("elevation", "%.3f"), ("soil", "%d"), ("rock_depth", "%.3f"), ("moisture", "%.3f"),
+                               ("hardpan", "%.2f"), ("esp", "%.1f"), ("waterlog", "%.2f")):
+                if lname in self.layers:
+                    f.write(f"layer {lname}\n")
+                    np.savetxt(f, self.layers[lname], fmt=fmt)
 
 
 def write_terrain_obj(path: Path, X: np.ndarray, Y: np.ndarray, Z: np.ndarray, rgb=(0.66, 0.55, 0.40)):
@@ -203,6 +207,62 @@ def world_header(name, origin, step=0.004):
 """
 
 
+def region_layers(g, X, Y, R: "regions.RegionSite", seed, soil_idx=None, keep=None, moisture=True, gradient=None):
+    """Write a region's secondary soils, moisture, waterlogging, sodicity and kankar pan into the grid.
+    keep: mask of cells whose soil must not change (a compacted road shoulder)."""
+    def patches(share, salt, scale=0.06):
+        n = smooth_noise(X * scale + 3.1 * salt, Y * scale - 1.7 * salt, seed + 20 + salt)
+        thr = np.quantile(n, 1.0 - share) if share > 0 else np.inf
+        return n, thr
+    if soil_idx is not None:
+        for k, (sname, share) in enumerate(R.secondary.items()):
+            n, thr = patches(share, k + 3, 0.12)
+            m = n > thr
+            if keep is not None:
+                m &= ~keep
+            soil_idx[m] = SOIL_INDEX[sname]
+    n, thr = patches(R.waterlog_cover, 7, 0.10)
+    wl = np.clip((n - thr) / 0.15, 0, 1) if R.waterlog_cover > 0 else np.zeros_like(X)
+    g.layers["waterlog"] = wl
+    if moisture:
+        mean, spread = R.moisture
+        m = mean + spread * smooth_noise(X * 0.04, Y * 0.04, seed + 3) + 0.14 * wl
+        if gradient is not None:
+            m = m + gradient
+        g.layers["moisture"] = np.clip(m, 0.02, 0.4)
+    if R.esp is not None:
+        n, thr = patches(R.esp_cover, 11, 0.11)
+        bg, patch = R.esp
+        g.layers["esp"] = bg + (patch - bg) * np.clip((n - thr) / 0.2, 0, 1)
+    if R.hardpan is not None:
+        n, thr = patches(R.hardpan_cover, 13, 0.09)
+        lo, hi = R.hardpan
+        depth = lo + (hi - lo) * (0.5 + 0.5 * smooth_noise(X * 0.1, Y * 0.1, seed + 14))
+        g.layers["hardpan"] = np.where(n > thr, depth, 9.0)
+
+
+def region_visuals(X, Y, layers, rng, z=0.0):
+    """Salt crust on sodic patches and standing water on waterlogged ones, so the regions read at a glance."""
+    out = []
+    for key, test, rgb, alpha, rr, count in (("esp", lambda v: v > 30, (0.93, 0.92, 0.88), 1.0, (0.5, 1.3), 60),
+                                             ("waterlog", lambda v: v > 0.7, (0.36, 0.43, 0.45), 0.85, (0.7, 1.6), 45)):
+        if key not in layers:
+            continue
+        idx = np.argwhere(test(layers[key]))
+        if not len(idx):
+            continue
+        for k, (i, j) in enumerate(idx[rng.choice(len(idx), size=min(count, len(idx)), replace=False)]):
+            r = rng.uniform(*rr)
+            out.append(f"<visual name='{key}{k}'><pose>{X[i, j]:.2f} {Y[i, j]:.2f} {z + 0.004 + 0.001 * (k % 3):.3f} 0 0 0</pose>"
+                       f"<geometry><cylinder><radius>{r:.2f}</radius><length>0.008</length></cylinder></geometry>"
+                       f"<material><ambient>{rgb[0]} {rgb[1]} {rgb[2]} {alpha}</ambient><diffuse>{rgb[0]} {rgb[1]} {rgb[2]} {alpha}</diffuse>"
+                       f"</material><transparency>{1 - alpha:.2f}</transparency></visual>")
+    if not out:
+        return ""
+    return ("    <model name='surface_features'><static>true</static><link name='l'>" + "".join(out)
+            + "</link></model>\n")
+
+
 def ground_plane(rgb=(0.62, 0.58, 0.40), size=2000):
     r, g, b = rgb
     return f"""    <model name="ground">
@@ -222,8 +282,10 @@ def shoulder_y(x):
     return 6.0 * np.sin(x / 45.0) + 2.5 * np.sin(x / 19.0 + 1.0)
 
 
-def build_roadside(out: Path, seed=7, soil="sandy_loam", spacing=3.0):
+def build_roadside(out: Path, seed=7, soil=None, spacing=3.0, region=None):
     name = "roadside"
+    R = regions.get(region, name)
+    soil = soil or R.soil
     rng = np.random.default_rng(seed)
     xs = np.arange(-30.0, 382.0, 2.0)
     cl = np.stack([xs, shoulder_y(xs)], axis=1)
@@ -260,19 +322,32 @@ def build_roadside(out: Path, seed=7, soil="sandy_loam", spacing=3.0):
     n1 = smooth_noise(X * 0.05, Y * 0.05, seed)
     g.layers["elevation"] = np.zeros_like(X)
     soil_idx = np.full(X.shape, SOIL_INDEX[soil])
-    soil_idx[(X > 150) & (X < 225)] = SOIL_INDEX["clayey_soil"]
-    soil_idx[(X > 280) & (X < 335) & (n1 > 0.0)] = SOIL_INDEX["lateritic_gravel"]
     # Carriageway and gravel shoulder are compacted: lateral offset from the shoulder centreline
     # (left positive) below +1.4 m. The verge, where planting happens, keeps the natural soil.
     lateral = (Y - shoulder_y(X)) * np.cos(np.arctan(np.gradient(shoulder_y(X), axis=1)))
-    soil_idx[lateral < 1.4] = SOIL_INDEX["lateritic_gravel"]
+    shoulder = lateral < 1.4
+    baseline = R.name == regions.DEFAULT[name]
+    if baseline:
+        soil_idx[(X > 150) & (X < 225)] = SOIL_INDEX["clayey_soil"]
+        soil_idx[(X > 280) & (X < 335) & (n1 > 0.0)] = SOIL_INDEX["lateritic_gravel"]
+    region_layers(g, X, Y, R, seed, soil_idx=None if baseline else soil_idx, keep=shoulder, moisture=not baseline)
+    if R.name == "ignp_canal":
+        # IGNP roads run beside canals: seepage waterlogs a stretch of the verge near the start of the line
+        seep = np.clip(1.0 - np.abs(X - 26.0) / 9.0, 0, 1) * (lateral > 1.4)
+        g.layers["waterlog"] = np.maximum(g.layers["waterlog"], np.clip(seep * 1.6, 0, 1))
+        g.layers["moisture"] = np.clip(g.layers["moisture"] + 0.14 * seep, 0.02, 0.4)
+    soil_idx[shoulder] = SOIL_INDEX["lateritic_gravel"]
     g.layers["soil"] = soil_idx
-    g.layers["rock_depth"] = np.clip(0.9 + 0.3 * n1, 0.45, 1.5)
-    g.layers["moisture"] = np.clip(0.14 + 0.06 * smooth_noise(X * 0.03, Y * 0.03, seed + 1), 0.04, 0.35)
+    mean, spread = R.rock_depth
+    g.layers["rock_depth"] = np.clip(mean + spread * n1, 0.45, 1.8)
+    if baseline:
+        g.layers["moisture"] = np.clip(0.14 + 0.06 * smooth_noise(X * 0.03, Y * 0.03, seed + 1), 0.04, 0.35)
     g.write(out / f"{name}.soilmap", name)
 
     # World.
-    parts = [world_header(name, ORIGINS[name]), ground_plane((0.60, 0.58, 0.38))]
+    parts = [world_header(name, R.origin), ground_plane((0.60, 0.58, 0.38) if baseline else R.ground_rgb),
+             region_visuals(X, Y, {k: np.where(lateral > 1.6, v, 0) for k, v in g.layers.items() if k in ("esp", "waterlog")},
+                            rng)]
     vis = []
     for i in range(len(cl) - 1):
         a, b = cl[i], cl[i + 1]
@@ -310,7 +385,8 @@ def build_roadside(out: Path, seed=7, soil="sandy_loam", spacing=3.0):
     p0, yaw0 = at_station(8.0, 0.0)
     site = {
         "name": name, "robot": "katar",
-        "origin": dict(zip(("lat", "lon", "alt"), ORIGINS[name])),
+        "origin": dict(zip(("lat", "lon", "alt"), R.origin)),
+        "region": R.name,
         "soil_map": f"{name}.soilmap",
         "spawn": [{"name": "katar", "x": float(p0[0]), "y": float(p0[1]), "z": 0.8, "yaw": float(yaw0)}],
         "roadside": {
@@ -328,8 +404,11 @@ def build_roadside(out: Path, seed=7, soil="sandy_loam", spacing=3.0):
 
 
 # =========================================================================== open field (Jaal)
-def build_open_field(out: Path, seed=11, soil="sandy_loam", fleet=3):
+def build_open_field(out: Path, seed=11, soil=None, fleet=3, region=None):
     name = "open_field"
+    R = regions.get(region, name)
+    soil = soil or R.soil
+    baseline = R.name == regions.DEFAULT[name]
     rng = np.random.default_rng(seed)
     fx0, fy0, fx1, fy1 = 0.0, 0.0, 120.0, 84.0           # 1.01 ha block
     tender = {"x": -14.0, "y": 10.0, "yaw": 0.0}
@@ -353,19 +432,24 @@ def build_open_field(out: Path, seed=11, soil="sandy_loam", fleet=3):
     n1 = smooth_noise(X * 0.06, Y * 0.06, seed)
     g.layers["elevation"] = np.zeros_like(X)
     soil_idx = np.full(X.shape, SOIL_INDEX[soil])
-    soil_idx[(n1 > 0.45)] = SOIL_INDEX["clayey_soil"]
-    soil_idx[(n1 < -0.55)] = SOIL_INDEX["dry_sand"]
+    if baseline:
+        soil_idx[(n1 > 0.45)] = SOIL_INDEX["clayey_soil"]
+        soil_idx[(n1 < -0.55)] = SOIL_INDEX["dry_sand"]
+    region_layers(g, X, Y, R, seed, soil_idx=None if baseline else soil_idx, moisture=not baseline)
     g.layers["soil"] = soil_idx
-    rock = np.clip(0.8 + 0.35 * n1, 0.35, 1.4)
+    mean, spread = R.rock_depth
+    rock = np.clip(mean - 0.1 + 0.35 * n1 * spread / 0.3, 0.35, 1.8)
     for o in obstacles:   # a stone or stump means no soil to bore where it sits
         if o["kind"] in ("stone", "stump"):
             m = (X - o["x"]) ** 2 + (Y - o["y"]) ** 2 < (o["r"] + 0.05) ** 2
             rock[m] = 0.03
     g.layers["rock_depth"] = rock
-    g.layers["moisture"] = np.clip(0.11 + 0.05 * smooth_noise(X * 0.04, Y * 0.04, seed + 3), 0.03, 0.3)
+    if baseline:
+        g.layers["moisture"] = np.clip(0.11 + 0.05 * smooth_noise(X * 0.04, Y * 0.04, seed + 3), 0.03, 0.3)
     g.write(out / f"{name}.soilmap", name)
 
-    parts = [world_header(name, ORIGINS[name]), ground_plane((0.66, 0.60, 0.42))]
+    parts = [world_header(name, R.origin), ground_plane((0.66, 0.60, 0.42) if baseline else R.ground_rgb),
+             region_visuals(X, Y, g.layers, rng)]
     # field boundary posts
     m = 2.5   # survey posts stand clear of the headland lanes
     for k, (x, y) in enumerate([(fx0 - m, fy0 - m), (fx1 + m, fy0 - m), (fx1 + m, fy1 + m), (fx0 - m, fy1 + m)]):
@@ -390,7 +474,8 @@ def build_open_field(out: Path, seed=11, soil="sandy_loam", fleet=3):
     spawn = [{"name": f"jaal_{i + 1}", "x": -6.0, "y": 2.0 + 4.5 * i, "z": 0.45, "yaw": 0.0} for i in range(6)]
     site = {
         "name": name, "robot": "jaal",
-        "origin": dict(zip(("lat", "lon", "alt"), ORIGINS[name])),
+        "origin": dict(zip(("lat", "lon", "alt"), R.origin)),
+        "region": R.name,
         "soil_map": f"{name}.soilmap",
         "spawn": spawn,
         "field": {
@@ -419,8 +504,12 @@ def hill_height(X, Y, slope_deg, seed):
     return base + rough + gully
 
 
-def build_hill_slope(out: Path, seed=23, slope_deg=14.0, soil="lateritic_gravel", rock_cover=0.25):
+def build_hill_slope(out: Path, seed=23, slope_deg=None, soil=None, rock_cover=None, region=None):
     name = "hill_slope"
+    R = regions.get(region, name)
+    slope_deg = R.slope_deg if slope_deg is None else slope_deg
+    soil = soil or R.soil
+    rock_cover = R.rock_cover if rock_cover is None else rock_cover
     rng = np.random.default_rng(seed)
     size, px = 96.0, 257
     res = size / (px - 1)
@@ -443,8 +532,7 @@ def build_hill_slope(out: Path, seed=23, slope_deg=14.0, soil="lateritic_gravel"
     soil_idx = np.full(X.shape, SOIL_INDEX[soil])
     soil_idx[(smooth_noise(X * 0.09, Y * 0.09, seed + 2) > 0.5) & (nrock < thr)] = SOIL_INDEX["sandy_loam"]
     g.layers["soil"] = soil_idx
-    g.layers["moisture"] = np.clip(0.10 + 0.05 * smooth_noise(X * 0.05, Y * 0.05, seed + 8) - 0.002 * (Y + 48),
-                                   0.03, 0.3)
+    region_layers(g, X, Y, R, seed, soil_idx=soil_idx, gradient=-0.002 * Y)   # wetter downslope, mean unchanged
     g.write(out / f"{name}.soilmap", name)
 
     # Heightmap image: Gazebo puts image row 0 at +y (north). Values span the full 16-bit range.
@@ -463,8 +551,8 @@ def build_hill_slope(out: Path, seed=23, slope_deg=14.0, soil="lateritic_gravel"
 
     png = (out / f"{name}_height.png").resolve()
     mesh = (out / f"{name}_terrain.obj").resolve()
-    write_terrain_obj(mesh, X, Y, H - hmin)
-    parts = [world_header(name, ORIGINS[name])]
+    write_terrain_obj(mesh, X, Y, H - hmin, rgb=R.ground_rgb)
+    parts = [world_header(name, R.origin)]
     # DART ignores <heightmap><pos>; lift the whole model by hmin instead (honoured by physics and rendering).
     parts.append(f"""    <model name="terrain">
       <static>true</static>
@@ -490,7 +578,8 @@ def build_hill_slope(out: Path, seed=23, slope_deg=14.0, soil="lateritic_gravel"
     sx, sy = -40.0, -4.0       # parked below the first contour, facing uphill
     site = {
         "name": name, "robot": "pahadi",
-        "origin": dict(zip(("lat", "lon", "alt"), ORIGINS[name])),
+        "origin": dict(zip(("lat", "lon", "alt"), R.origin)),
+        "region": R.name,
         "soil_map": f"{name}.soilmap",
         "heightmap": f"{name}_height.png",
         "slope_deg": slope_deg,

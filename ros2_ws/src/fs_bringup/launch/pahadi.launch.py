@@ -5,7 +5,8 @@
     ros2 launch fs_bringup pahadi.launch.py headless:=true rviz:=false max_spots:=6
 
 Arguments
-  slope       hillside slope, degrees (14)
+  region      aravalli_hills (Udaipur, 14 deg, rocky) | himalayan_midhills (Garhwal, 24 deg, moist)
+  slope       hillside slope, degrees (the region's)
   soil        lateritic_gravel | sandy_loam | dry_sand | clayey_soil | heavy_clay
   rock_cover  share of ground too thin for the auger, 0-0.8 (0.25)
   side        downhill | uphill: which side the arm plants (stability trade-off)
@@ -23,8 +24,8 @@ from launch_ros.actions import Node
 
 from fs_bringup import sim
 
-ARGS = {"slope": "14", "soil": "lateritic_gravel", "rock_cover": "0.25", "side": "downhill", "rows": "3",
-        "row_spacing": "4.0", "spacing": "2.5", "half_moon": "true", "speed": "0.35", "max_spots": "0",
+ARGS = {"region": "", "slope": "", "soil": "", "rock_cover": "", "side": "downhill", "rows": "3",
+        "row_spacing": "", "spacing": "", "half_moon": "true", "speed": "0.35", "max_spots": "0",
         "headless": "false", "rtf": "1.0", "rviz": "true", "seed": "23", "lidar": "true", "log_dir": "", "inspect": "false", "people": ""}
 
 CONTACTS = [f"{m}{s}{i}_link" for m in "fr" for s in "lr" for i in (1, 2, 3)]
@@ -33,8 +34,10 @@ CONTACTS = [f"{m}{s}{i}_link" for m in "fr" for s in "lr" for i in (1, 2, 3)]
 def setup(context):
     c = context.launch_configurations
     seed = int(c["seed"])
-    site_dir = sim.make_site("hill_slope", seed=seed, slope_deg=float(c["slope"]), soil=c["soil"],
-                             rock_cover=float(c["rock_cover"]))
+    region, spacing, row_spacing = sim.region_setup("pahadi", "hill_slope", c)
+    site_dir = sim.make_site("hill_slope", seed=seed, slope_deg=float(c["slope"]) if c["slope"] else None,
+                             soil=c["soil"] or None, rock_cover=float(c["rock_cover"]) if c["rock_cover"] else None,
+                             region=region)
     site = sim.load_site_yaml(site_dir, "hill_slope")
     site_file = site_dir / "hill_slope.yaml"
     ns = "pahadi"
@@ -53,8 +56,8 @@ def setup(context):
                           "contact_parents": ["base_link" if n.startswith("f") else "rear_link" for n in CONTACTS],
                           "wheel_radius": 0.21}]),
         Node(package="fs_autonomy", executable="pahadi_navigator", namespace=ns, output="screen",
-             parameters=[{**common, "rows": int(c["rows"]), "row_spacing": float(c["row_spacing"]),
-                          "spacing": float(c["spacing"]), "side": c["side"], "half_moon": sim.on(c["half_moon"]),
+             parameters=[{**common, "rows": int(c["rows"]), "row_spacing": row_spacing,
+                          "spacing": spacing, "side": c["side"], "half_moon": sim.on(c["half_moon"]),
                           "speed": float(c["speed"]), "max_spots": int(c["max_spots"]), "seed": seed}]),
     ]
     actions += sim.common_nodes(site_file, sim.on(c["rviz"]), "pahadi.rviz", c["log_dir"])

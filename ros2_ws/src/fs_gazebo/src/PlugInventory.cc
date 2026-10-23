@@ -23,7 +23,7 @@
 //   drop <holder>                          the plug has left the machine (it is in the ground)
 //   fill <carrier> [n]                     restock: fill empty cells, n at most
 //   empty <carrier> [n]                    unload: clear filled cells from the last one, n at most
-// Status (JSON, 5 Hz): per carrier count, cells, next full cell with its local position, ring
+// Status (JSON, 5 Hz): per carrier count, cells, occ ('1' per full cell), next full cell with its local position, ring
 // angle and world position; per holder whether it holds a plug.
 #include <gz/msgs/stringmsg.pb.h>
 
@@ -167,8 +167,11 @@ public:
       int count = 0, next = -1;
       for (size_t i = 0; i < c.plugs.size(); ++i)
         if (c.plugs[i] != gz::sim::kNullEntity) { ++count; if (next < 0) next = static_cast<int>(i); }
+      std::string occ(c.plugs.size(), '0');               // one character per cell, for species bookkeeping
+      for (size_t i = 0; i < c.plugs.size(); ++i)
+        if (c.plugs[i] != gz::sim::kNullEntity) occ[i] = '1';
       js << (first ? "" : ",") << "\"" << n << "\":{\"count\":" << count << ",\"cells\":" << c.cells.size()
-         << ",\"next\":" << next;
+         << ",\"next\":" << next << ",\"occ\":\"" << occ << "\"";
       if (next >= 0)
       {
         const auto &p = c.cells[static_cast<size_t>(next)];

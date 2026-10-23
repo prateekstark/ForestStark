@@ -122,6 +122,22 @@ def planting_sdf(kind: str, name: str, x: float, y: float, z: float, yaw: float 
             segs.append(_vis(f"s{i}", box(0.26, 0.12, 0.1), f"{0.45 * math.cos(a):.3f} {0.45 * math.sin(a):.3f} 0.04 "
                                                               f"0 0 {a + math.pi / 2:.3f}", SOIL))
         inner = "".join(segs)
+    elif kind == "basin":                 # saucer basin, ~1 m across, a low berm round the plant
+        import math
+        inner = _vis("floor", cyl(0.46, 0.012), "0 0 0.004 0 0 0", (0.45, 0.33, 0.22)) + "".join(
+            _vis(f"b{i}", box(0.22, 0.09, 0.07), f"{0.5 * math.cos(i * math.pi / 8):.3f} {0.5 * math.sin(i * math.pi / 8):.3f} 0.03 "
+                                                  f"0 0 {i * math.pi / 8 + math.pi / 2:.3f}", SOIL) for i in range(16))
+    elif kind == "trench":                # staggered contour trench, 2.0 x 0.45 m, spoil berm on the downhill side
+        inner = (_vis("slot", box(2.0, 0.45, 0.02), "0 0 0.005 0 0 0", (0.25, 0.19, 0.13)) +
+                 _vis("berm", box(2.0, 0.25, 0.14), "0 -0.36 0.06 0 0 0", SOIL))
+    elif kind == "mound":                 # raised planting mound on waterlogged ground
+        inner = (_vis("mound", "<cone><radius>0.5</radius><length>0.3</length></cone>", "0 0 0.15 0 0 0", SOIL) +
+                 _vis("top", cyl(0.22, 0.02), "0 0 0.3 0 0 0", (0.45, 0.33, 0.22)))
+    elif kind in ("mulch_stone", "mulch_organic"):
+        rgb = (0.62, 0.60, 0.56) if kind == "mulch_stone" else (0.47, 0.36, 0.20)
+        inner = "".join(_vis(f"m{i}", sph(0.05 if kind == "mulch_stone" else 0.04),
+                             f"{0.28 * ((i * 0.618) % 1 - 0.5) * 2:.3f} {0.28 * ((i * 0.381) % 1 - 0.5) * 2:.3f} 0.02 0 0 0", rgb)
+                        for i in range(22))
     elif kind == "skip":
         inner = (_vis("cone", "<cone><radius>0.12</radius><length>0.3</length></cone>", "0 0 0.15 0 0 0",
                       (0.88, 0.42, 0.11)))

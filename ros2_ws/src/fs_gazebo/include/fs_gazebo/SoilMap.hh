@@ -30,6 +30,7 @@ struct SoilSample
   double elevation{0.0};
   double rockDepth{1.0};
   double moisture{0.15};
+  double hardpan{9.0};     ///< depth to a hard calcic (kankar) pan, m; 9 = none
 };
 
 class SoilMap
@@ -60,7 +61,7 @@ private:
   double x0_{0}, y0_{0}, res_{1.0};
   int nx_{1}, ny_{1};
   std::vector<SoilParams> soils_;
-  std::vector<float> elevation_, soil_, rock_, moisture_;
+  std::vector<float> elevation_, soil_, rock_, moisture_, hardpan_;
 };
 
 }  // namespace fs::soil

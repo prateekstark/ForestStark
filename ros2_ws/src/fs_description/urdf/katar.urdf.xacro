@@ -17,6 +17,9 @@
   <xacro:arg name="soil_map" default=""/>
   <xacro:arg name="gnss_sigma" default="0.02"/>
   <xacro:arg name="inspect_cam" default="false"/>
+  <!-- feed stroke of the auger: 1.3 m bores ~0.55 m below grade; the deep-auger kit (2.0 m) bores the
+       1.2 m CSSRI auger holes through a kankar pan on sodic land -->
+  <xacro:arg name="auger_stroke" default="1.3"/>
   <xacro:property name="ns" value="$(arg ns)"/>
   <xacro:property name="R" value="katar"/>
   <xacro:include filename="$(find fs_description)/urdf/common.xacro"/>
@@ -102,7 +105,7 @@
     <inertial><mass value="25"/><inertia ixx="0.5" iyy="0.5" izz="0.9" ixy="0" ixz="0" iyz="0"/></inertial>
     <xacro:mesh_visual robot="${R}" link="turret_link"/>
   </link>
-  <xacro:auger_head robot="${R}" parent="turret_link" xyz="0.2 0 -0.06" length="0.95" stroke="1.3"/>
+  <xacro:auger_head robot="${R}" parent="turret_link" xyz="0.2 0 -0.06" length="0.95" stroke="$(arg auger_stroke)"/>
   <xacro:duckbill_head robot="${R}" parent="turret_link" xyz="-0.2 0 -0.06" stroke="1.6" tamp_xyz="-0.2 0 -0.20" tamp_stroke="1.6"/>
 
   <!-- boom-side lidar, 0.3 m above ground, watching the strip the boom works in -->
@@ -154,9 +157,9 @@
     <plugin filename="fs_auger_soil_system" name="fs::AugerSoil">
       <soil_map>$(arg soil_map)</soil_map>
       <feed_joint>auger_feed_joint</feed_joint><spin_joint>auger_spin_joint</spin_joint>
-      <tip_link>auger_link</tip_link><tip_offset>0 0 -0.95</tip_offset><tool_axis>0 0 -1</tool_axis>
+      <tip_link>auger_link</tip_link><reaction_link>turret_link</reaction_link><tip_offset>0 0 -0.95</tip_offset><tool_axis>0 0 -1</tool_axis>
       <diameter>0.15</diameter><max_power>8000</max_power><efficiency>0.75</efficiency>
-      <max_thrust>8000</max_thrust><max_feed>0.15</max_feed><rpm>90</rpm><max_stroke>1.3</max_stroke>
+      <max_thrust>8000</max_thrust><max_feed>0.15</max_feed><rpm>90</rpm><max_stroke>$(arg auger_stroke)</max_stroke>
       <free_speed>0.5</free_speed><retract_speed>0.6</retract_speed>
       <cmd_topic>/model/${ns}/auger/cmd</cmd_topic><status_topic>/model/${ns}/auger/status</status_topic>
     </plugin>
