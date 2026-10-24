@@ -16,14 +16,21 @@ fs_autonomy.safety:
   localization older than 1 s, or off the site   stop
 
 A stop is released only after the zone has been clear for clear_s (default 2 s), so a person
-stepping in and out does not make the robot lurch. Everything is published on safety/status
+stepping in and out does not make the robot lurch.
+
+Under this comfort layer sits the certified one (docs/safety_concept.md): safety scanners, a
+safety PLC and the drives' STO. Its state arrives on safety/hw (fs_interfaces/HwSafety) from
+fs_hardware safety_bridge on a machine; in simulation this node runs a model of the PLC on the same
+scans (fs_autonomy.safety_fields.PlcModel, plc_model:=true) and publishes it there. Either way a PLC
+stop, field violation or e-stop is reflected here (the PLC acts on its own; this only tells the
+planners), and if a PLC that was reporting goes quiet the monitor stops the robot. Everything is published on safety/status
 (fs_interfaces/SafetyStatus) for the navigator, the planting head and RViz.
 """
 import math
 
 import numpy as np
 import rclpy
-from fs_interfaces.msg import PlantRecord, RobotState, SafetyStatus
+from fs_interfaces.msg import HwSafety, PlantRecord, RobotState, SafetyStatus
 from geometry_msgs.msg import Point, Twist
 from nav_msgs.msg import Odometry
 from rclpy.node import Node
@@ -32,7 +39,7 @@ from sensor_msgs.msg import Imu, LaserScan
 from std_msgs.msg import Bool, String
 from tf2_ros import Buffer, TransformListener
 
-from .. import safety
+from .. import safety, safety_fields
 from ..geometry import rpy_from_quat, transform_to_matrix, yaw_from_quat
 from ..ros_common import load_site, lookup, param, sim_now
 
@@ -96,6 +103,11 @@ class SafetyMonitor(Node):
         self.hold_clear_since = None
         self.block_id, self.block_since = None, None
         self.last_log = -1e9
+        self.points = np.zeros((0, 2))               # filtered scan points, base_link (the PLC model's input)
+        self.wheel_v = (0.0, 0.0)
+        self.tool_active = False
+        self.plc = safety_fields.PlcModel(self.kind) if param(self, "plc_model", False) else None
+        self.hw, self.hw_t = None, None
 
         for s in scans:
             self.create_subscription(LaserScan, s, lambda m, s=s: self.scans.__setitem__(s, m), qos_profile_sensor_data)
@@ -108,6 +120,10 @@ class SafetyMonitor(Node):
         self.create_subscription(String, "operator", self.on_operator, 10)
         for p in peers:
             self.create_subscription(RobotState, f"/{p}/state", lambda m, p=p: self.peer_pos.__setitem__(p, (m.x, m.y)), 10)
+        self.create_subscription(String, "auger/status", self.on_auger, 10)
+        if self.plc is None:
+            self.create_subscription(HwSafety, "safety/hw", self.on_hw, 10)
+        self.hw_pub = self.create_publisher(HwSafety, "safety/hw", 10) if self.plc is not None else None
         self.cmd_pub = self.create_publisher(Twist, "cmd_vel", 10)
         self.status_pub = self.create_publisher(SafetyStatus, "safety/status", 10)
         self.create_timer(0.1, self.tick)
@@ -125,6 +141,7 @@ class SafetyMonitor(Node):
     def on_wheel_odom(self, m: Odometry):
         q = m.pose.pose.orientation
         self.opose = (m.pose.pose.position.x, m.pose.pose.position.y, yaw_from_quat(q.x, q.y, q.z, q.w))
+        self.wheel_v = (m.twist.twist.linear.x, m.twist.twist.linear.y)     # the encoders' speed: the PLC's field switching
         if self.odom_t0 is None:
             self.odom_t0 = sim_now(self)
 
@@ -146,6 +163,41 @@ class SafetyMonitor(Node):
         q = m.orientation
         r, p, _ = rpy_from_quat(q.x, q.y, q.z, q.w)
         self.rp = (r, p)
+
+    def on_auger(self, m: String):
+        import json
+        try:
+            self.tool_active = json.loads(m.data).get("phase") in ("lowering", "boring", "retracting")
+        except ValueError:
+            pass
+
+    def on_hw(self, m: HwSafety):
+        self.hw, self.hw_t = m, sim_now(self)
+
+    def plc_step(self, t):
+        """Simulation: the PLC model on this cycle's scan points, wheel speed and tool."""
+        s = self.plc.update(t, self.points, *self.wheel_v, self.link_xy(self.tool_link), self.tool_active,
+                            estop=self.estop, tilt_deg=math.degrees(max(abs(self.rp[0]), abs(self.rp[1]))))
+        m = HwSafety()
+        m.header.stamp = self.get_clock().now().to_msg()
+        m.header.frame_id = f"{self.ns}/base_link"
+        for k in ("estop", "protective_stop", "warning", "tool_zone", "tilt", "sto_drive", "sto_tool"):
+            setattr(m, k, bool(getattr(s, k)))
+        m.field_set, m.field_name, m.heartbeat_ok, m.simulated = int(s.field_set), s.field_name, True, True
+        self.hw, self.hw_t = m, t
+        self.hw_pub.publish(m)
+
+    def hw_reason(self, t):
+        """What the certified layer is doing, as a stop reason ("" = nothing)."""
+        if self.hw is None:
+            return ""
+        if t - self.hw_t > 0.5:
+            return "plc_link"
+        if self.hw.estop:
+            return "plc_estop"
+        if self.hw.protective_stop or self.hw.sto_drive:
+            return "plc_field"
+        return ""
 
     def on_operator(self, m: String):
         if m.data == "estop":
@@ -206,6 +258,7 @@ class SafetyMonitor(Node):
                 for sx, sy in selfs:
                     keep &= np.hypot(p[:, 0] - sx, p[:, 1] - sy) > self.self_r      # own moving tools
                 sets.append(p[keep])
+        self.points = np.vstack(sets) if sets else np.zeros((0, 2))
         return safety.clusters(sets)
 
     # ------------------------------------------------------------------ main loop
@@ -229,6 +282,8 @@ class SafetyMonitor(Node):
                     self.get_logger().info(f"track {tr.id}: moving object at odom ({tr.x:.1f}, {tr.y:.1f}), r {tr.r:.2f} m, "
                                            f"{math.hypot(tr.x - h[1], tr.y - h[2]):.2f} m in {t - h[0]:.1f} s, "
                                            f"first seen {t - tr.t_first:.1f} s ago at ({tr.x0:.1f}, {tr.y0:.1f})")
+        if self.plc is not None:
+            self.plc_step(t)
         self.evaluate(t)
         self.publish_status(t)
         if t - self.cmd_t > 0.4:                      # watchdog: the planner went quiet
@@ -238,8 +293,11 @@ class SafetyMonitor(Node):
         """Run the zones for the current command and apply the hysteresis."""
         reason = ""
         A = safety.Assessment()
+        hw = self.hw_reason(t)
         if self.estop:
             reason = "estop"
+        elif hw:
+            reason = hw
         elif self.pose is None or t - self.pose_t > 1.0 or self.opose is None:
             reason = "localization"
         else:
@@ -276,6 +334,9 @@ class SafetyMonitor(Node):
         elif b.id != self.block_id:
             self.block_id, self.block_since = b.id, t
         # tool zone
+        if self.hw is not None and (self.hw.tool_zone or self.hw.sto_tool) and not A.tool_hold:
+            A.tool_hold = True
+            A.notes = ["safety PLC: tool zone"] + list(A.notes or [])
         if A.tool_hold or self.estop:
             if not self.hold:
                 self.get_logger().warning(f"tool hold: person in the tool zone ({A.notes[0]})" if A.tool_hold and A.notes
@@ -311,7 +372,7 @@ class SafetyMonitor(Node):
         m.header.frame_id = f"{self.ns}/base_link"
         m.robot = self.ns
         m.speed_scale = float(self.out_scale)
-        m.level = (SafetyStatus.ESTOP if self.estop else SafetyStatus.STOP if self.out_scale <= 0.0
+        m.level = (SafetyStatus.ESTOP if self.estop or self.stop_reason == "plc_estop" else SafetyStatus.STOP if self.out_scale <= 0.0
                    else SafetyStatus.SLOW if self.out_scale < 1.0 else SafetyStatus.CLEAR)
         m.reason = self.stop_reason or (A.reason if self.out_scale < 1.0 else "")
         m.tool_hold = bool(self.hold)

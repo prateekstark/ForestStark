@@ -22,6 +22,9 @@
 #include <array>
 #include <cmath>
 #include <cstdint>
+#include <cstdio>
+#include <fstream>
+#include <sstream>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -191,7 +194,7 @@ public:
     {
       const double t = (static_cast<double>(k) / steps - 0.5) * b;
       float &v = d_[Key(x + t * lx / ln, y + t * ly / ln)];
-      v = std::max(v, static_cast<float>(z));
+      if (z > v + 1e-4) { v = static_cast<float>(z); ++changes_; }
     }
     maxDepth_ = std::max(maxDepth_, z);
   }
@@ -199,12 +202,55 @@ public:
   size_t Cells() const { return d_.size(); }
   double Area() const { return d_.size() * cell_ * cell_; }
   double MaxDepth() const { return maxDepth_; }
+  /// Count of Press calls that deepened a cell since the last Save (nothing to write when 0).
+  size_t Changes() const { return changes_; }
+
+  /// Text file: "cell <m>" then one "x y depth" row per pressed cell (cell centres, deepest press).
+  bool Save(const std::string &path)
+  {
+    const std::string tmp = path + ".tmp";
+    {
+      std::ofstream f(tmp);
+      if (!f) return false;
+      f << "# fs ruts: depth each 0.1 m cell of ground was pressed to by wheels and tracks\ncell " << cell_ << "\n";
+      for (const auto &[k, v] : d_)
+      {
+        const int64_t i = k >> 32, j = static_cast<int32_t>(k & 0xffffffff);
+        f << (i + 0.5) * cell_ << " " << (j + 0.5) * cell_ << " " << v << "\n";
+      }
+    }
+    changes_ = 0;
+    return std::rename(tmp.c_str(), path.c_str()) == 0;
+  }
+
+  bool Load(const std::string &path)
+  {
+    std::ifstream f(path);
+    if (!f) return false;
+    std::string line;
+    while (std::getline(f, line))
+    {
+      if (line.empty() || line[0] == '#') continue;
+      std::istringstream ls(line);
+      if (line.rfind("cell", 0) == 0) { std::string k; ls >> k >> cell_; continue; }
+      double x, y, z;
+      if (ls >> x >> y >> z)
+      {
+        float &v = d_[Key(x, y)];
+        v = std::max(v, static_cast<float>(z));
+        maxDepth_ = std::max(maxDepth_, z);
+      }
+    }
+    changes_ = 0;
+    return true;
+  }
 
 private:
   int64_t Idx(double v) const { return static_cast<int64_t>(std::floor(v / cell_)); }
   int64_t Key(double x, double y) const { return (Idx(x) << 32) ^ (Idx(y) & 0xffffffff); }
   double cell_;
   double maxDepth_{0.0};
+  size_t changes_{0};
   std::unordered_map<int64_t, float> d_;
 };
 

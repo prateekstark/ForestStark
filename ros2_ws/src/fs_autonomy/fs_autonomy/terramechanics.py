@@ -52,6 +52,8 @@ MOISTURE = {
 
 
 def _mp(soil: dict):
+    if "ref_moisture" in soil:       # read from the soil map (possibly calibrated)
+        return soil["ref_moisture"], soil["wet_softening"], soil["capillary_c"], soil["true_cohesion"]
     return MOISTURE.get(soil.get("name", ""), (0.15, 4.0, 0.0, 1.0))
 
 

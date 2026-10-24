@@ -1,0 +1,32 @@
+# Jaal: one CiA 402 drive per joint on the machine's CAN bus (fs_hardware/CanopenSystem).
+# Drive: four swerve modules: steer servo (position) + hub motor (velocity).
+# mode: position | velocity (command interface) | sensor (state only: an encoder on a passive joint)
+# counts_per_unit: drive counts per m (prismatic) or per rad (revolute, continuous), after any gearbox
+# rated: N or N m that the drive's torque-actual per mille refers to
+# Set node ids and scales to the as-built machine; `ros2 launch fs_hardware hardware.launch.py bus:=mock` runs it on a desk.
+bus: can0
+bitrate: 500000
+cycle_s: 0.01
+joints:
+  - {name: wheel_fl_joint, node: 1, mode: velocity, counts_per_unit: 625823, rated: 900}
+  - {name: wheel_fr_joint, node: 2, mode: velocity, counts_per_unit: 625823, rated: 900}
+  - {name: wheel_rl_joint, node: 3, mode: velocity, counts_per_unit: 625823, rated: 900}
+  - {name: wheel_rr_joint, node: 4, mode: velocity, counts_per_unit: 625823, rated: 900}
+  - {name: steer_fl_joint, node: 5, mode: position, counts_per_unit: 1043038, rated: 800}
+  - {name: steer_fr_joint, node: 6, mode: position, counts_per_unit: 1043038, rated: 800}
+  - {name: steer_rl_joint, node: 7, mode: position, counts_per_unit: 1043038, rated: 800}
+  - {name: steer_rr_joint, node: 8, mode: position, counts_per_unit: 1043038, rated: 800}
+  - {name: drum_f_joint, node: 9, mode: position, counts_per_unit: 1043038, rated: 300}
+  - {name: drum_r_joint, node: 10, mode: position, counts_per_unit: 1043038, rated: 300}
+  - {name: picker_x_joint, node: 11, mode: position, counts_per_unit: 100000, rated: 500}
+  - {name: picker_z_joint, node: 12, mode: position, counts_per_unit: 100000, rated: 300}
+  - {name: picker_y_joint, node: 13, mode: position, counts_per_unit: 100000, rated: 200}
+  - {name: finger_a_joint, node: 14, mode: position, counts_per_unit: 100000, rated: 100}
+  - {name: finger_b_joint, node: 15, mode: position, counts_per_unit: 100000, rated: 100}
+  - {name: shuttle_joint, node: 16, mode: position, counts_per_unit: 100000, rated: 2000}
+  - {name: duckbill_feed_joint, node: 17, mode: position, counts_per_unit: 100000, rated: 5000}
+  - {name: jaw_l_joint, node: 18, mode: position, counts_per_unit: 1043038, rated: 500}
+  - {name: jaw_r_joint, node: 19, mode: position, counts_per_unit: 1043038, rated: 500}
+  - {name: tamp_joint, node: 20, mode: position, counts_per_unit: 100000, rated: 3000}
+  - {name: auger_feed_joint, node: 21, mode: velocity, counts_per_unit: 100000, rated: 20000, mock_contact: 0.15}
+  - {name: auger_spin_joint, node: 22, mode: velocity, counts_per_unit: 208608, rated: 3000}

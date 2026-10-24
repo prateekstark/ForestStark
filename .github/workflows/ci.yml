@@ -24,14 +24,16 @@ jobs:
           source install/setup.bash
           colcon test --event-handlers console_direct+
           colcon test-result --verbose
-      - name: Physics audit and hardware contract are current
+      - name: Generated docs are current (physics audit, hardware contract, safety fields, survival)
         working-directory: ros2_ws
         run: |
           source install/setup.bash
           ros2 run fs_bringup physics_audit --out ../docs/physics_audit.md
           ros2 run fs_bringup interface_contract --out ../docs/hardware_interface.md
+          ros2 run fs_bringup safety_fields --out ../docs/safety_fields.md
+          python3 -m fs_autonomy.survival --out ../docs/survival.md
           git config --global --add safe.directory "$GITHUB_WORKSPACE"
-          git diff --exit-code -- ../docs/physics_audit.md ../docs/hardware_interface.md
+          git diff --exit-code -- ../docs/physics_audit.md ../docs/hardware_interface.md ../docs/safety_fields.md ../docs/safety_fields.yaml ../docs/survival.md
           ! grep -q "\*\*FAIL\*\*" ../docs/physics_audit.md
 
   image:

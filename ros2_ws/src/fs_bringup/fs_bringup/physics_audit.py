@@ -50,8 +50,8 @@ WET = 0.32   # volumetric moisture of a loam or clay a day after monsoon rain
 
 
 def soils():
-    from fs_gazebo.sites import SOILS
-    return {s[0]: dict(name=s[0], n=s[1], kc=s[2], kphi=s[3], c=s[4], phi=s[5], K=s[6], eb=s[7]) for s in SOILS}
+    from fs_gazebo.sites import SOIL_KEYS, soil_rows
+    return {s[0]: dict(zip(SOIL_KEYS, s[1:]), name=s[0]) for s in soil_rows()}
 
 
 def rpy_matrix(r, p, y):
@@ -67,7 +67,7 @@ class Model:
         self.root = ET.fromstring(xml)
         self.q = q or {}
         self.joints = {}
-        for j in self.root.iter("joint"):
+        for j in self.root.findall("joint"):
             o = j.find("origin")
             a = j.find("axis")
             lim = j.find("limit")

@@ -18,8 +18,8 @@
   <xacro:property name="WR" value="0.21"/>
   <xacro:property name="R" value="pahadi"/>
   <xacro:arg name="inspect_cam" default="false"/>
-  <xacro:property name="L_UP" value="0.85"/>
-  <xacro:property name="L_FORE" value="0.85"/>
+  <xacro:property name="L_UP" value="1.0"/>
+  <xacro:property name="L_FORE" value="1.0"/>
   <xacro:include filename="$(find fs_description)/urdf/common.xacro"/>
 
   <!-- ===================== front module ===================== -->
@@ -181,7 +181,7 @@
     <plugin filename="fs_auger_soil_system" name="fs::AugerSoil">
       <soil_map>$(arg soil_map)</soil_map>
       <feed_joint>auger_feed_joint</feed_joint><spin_joint>auger_spin_joint</spin_joint>
-      <tip_link>auger_link</tip_link><tip_offset>0.36 0 0</tip_offset><tool_axis>1 0 0</tool_axis>
+      <tip_link>auger_link</tip_link><reaction_link>arm_wrist_link</reaction_link><tip_offset>0.36 0 0</tip_offset><tool_axis>1 0 0</tool_axis>
       <diameter>0.12</diameter><max_power>2000</max_power><efficiency>0.8</efficiency>
       <max_thrust>2500</max_thrust><max_feed>0.12</max_feed><rpm>110</rpm><max_stroke>0.45</max_stroke>
       <rock_energy>45</rock_energy><pick_efficiency>0.5</pick_efficiency>

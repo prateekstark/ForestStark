@@ -103,6 +103,18 @@ A stop is released only after the zone has been clear for 2 s (3 s for the tool)
 
 The state is published on `<ns>/safety/status` (`fs_interfaces/SafetyStatus`) and drawn in RViz (`/viz/safety`: tracked people and STOP / TOOL HOLD labels).
 
+**Certified layer underneath.** The monitor is the comfort layer. The safety functions that have to be certified sit beneath it:
+- outdoor safety scanners;
+- a safety PLC;
+- the drives' safe torque off (STO), safe stop 1 (SS1) and safely-limited speed (SLS);
+- emergency-stop circuits and an inclinometer.
+
+These reach PL d, and [docs/safety_concept.md](docs/safety_concept.md) sets out the hazards, the safety functions and the validation plan.
+
+`ros2 run fs_bringup safety_fields` sizes each robot's scanner field sets from its stopping performance per ISO 13855. It writes them to [docs/safety_fields.md](docs/safety_fields.md), and to `.yaml` in each scanner's frame for the configuration tool.
+
+The monitor's stop distances are floored above those fields at every speed, so the software always stops first. In simulation the monitor also runs the PLC's logic on the same scans (`plc_model`) and publishes it on `<ns>/safety/hw`. On a machine, `fs_hardware safety_bridge` publishes the real PLC's state there instead. A PLC stop, a field violation, an e-stop, or a PLC that falls silent becomes a monitor stop with reason `plc_field`, `plc_estop` or `plc_link`.
+
 To test it, add `people:=all` to a launch: simulated people and a crate act out the scenarios against the robot (`jaal_1` for Jaal).
 
 ```bash
@@ -160,9 +172,9 @@ cad/.venv/bin/python cad/build.py pahadi       # one robot
 | `ros2_ws/src/fs_description/meshes/<robot>/<link>.obj` | Per-link visuals used by Gazebo and RViz (metres); trays use light proxies in the meshes and full cells in the STEP |
 | `ros2_ws/src/fs_description/config/<robot>_inertials.yaml` | Mass, centre of mass and inertia tensor of every link, integrated from the solids; the launch files put them into the URDF Gazebo loads |
 
-Estimated structural masses: Katar 4,369 kg (tractor and trailer), Jaal 1,547 kg, Pahadi 1,423 kg. In
+Estimated structural masses: Katar 4,369 kg (tractor and trailer), Jaal 1,628 kg, Pahadi 1,427 kg. In
 running order, with wheels, batteries, water, plugs and amendments from the catalogue table in
-`cad/build.py`, they are 5,212 kg, 2,015 kg and 1,555 kg.
+`cad/build.py`, they are 5,212 kg, 2,015 kg and 1,560 kg.
 
 Every feed in the plant handling rides on something you can see. The auger, duckbill and tamp ring
 run on box-section masts with a carriage, slot and drive rod, so nothing hangs in mid-air while it
@@ -186,12 +198,40 @@ The audit loads the URDF Gazebo loads and checks it against what the field needs
 [docs/physics_audit.md](docs/physics_audit.md) has the current results; CI fails if any check
 FAILs. The WARNs are operating limits, not design faults:
 - Katar keeps to verges no steeper than 6° in clayey soil, and to 5° when it is wet.
-- Jaal sinks 6 cm in loose dry sand.
+- Jaal keeps to 5° in wet clay.
 
-## 2f. Deploying on a machine
+Jaal's 0.32 m flotation tyres keep its sinkage in loose dry sand to 4.5 cm.
+
+## 2f. Season, ruts and survival
+
+```bash
+ros2 launch fs_bringup jaal.launch.py region:=thar_arid date:=05-15     # pre-monsoon: dry sand, pits cave in
+ros2 launch fs_bringup katar.launch.py region:=hadoti_vertisol date:=08-15   # wet black cotton soil
+python3 -m fs_autonomy.survival --out docs/survival.md
+```
+
+- **Season:** `date:=MM-DD` sets the site's soil moisture from a year of daily water balance for the region (`fs_gazebo/climate.py`), instead of the region's planting-time mean. The balance uses stochastic rain on IMD normals, Green-Ampt infiltration, drainage and drying. Black cotton soil goes from 0.15 before the monsoon to 0.42 in it; Thar sand never passes 0.05.
+- **Ruts:** they outlast a run. `fs::Terramechanics` saves the rut map beside the soil map (`<site>.soilmap.ruts`) and loads it on the next launch of the same site, so compaction memory carries over. The site generator draws the ruts and, on the heightmap hill site, lowers the terrain under them. `ruts:=clear` starts fresh.
+- **Survival:** every planted spot gets a predicted first-year survival (`survival_1y`, `survival_risk`), from a year of root-zone water after planting with the season's rain (`fs_autonomy/survival.py`). The model includes drought, waterlogging, sodicity and transplant shock, each scaled by species tolerance. The pit depth and water the robot actually achieved feed in. The mission summary counts the trees expected alive after a year. [docs/survival.md](docs/survival.md) compares each region's prescribed method with a plain 30 cm pit:
+
+| Site | Prescribed | Plain pit |
+|---|---|---|
+| Thar sand | 85 % | 19 % |
+| Sodic land with a kankar pan | 80 % | 1 % |
+| Waterlogged canal bank | 75 % | 36 % |
+| Aravalli slope | 88 % | 53 % |
+| Jaipur loam | 82 % | 71 % |
+
+The hazard constants were tuned to the survival the cited sources report, so the model ranks methods; it doesn't forecast. A year-on field count recalibrates it (`calibrate survival`).
+
+## 2g. Deploying on a machine
 
 `ros2 launch fs_bringup robot.launch.py robot:=<katar|jaal|pahadi> site_file:=<surveyed site>` runs
-the same autonomy nodes without Gazebo. The drivers serve the topics in
+the same autonomy nodes without Gazebo.
+
+`hardware:=true` also starts the machine's drives. That is ros2_control with `fs_hardware/CanopenSystem` on the CAN bus, plus the nodes that serve the hardware interface from it. `bus:=mock` runs simulated drives, so the whole machine stack can be exercised on a desk: joints follow commands, `cmd_vel` drives the wheels, odometry comes from the encoders, and the auger bores to depth from ground contact. `ros2 launch fs_hardware hardware.launch.py robot:=jaal bus:=mock` starts the drives on their own, for commissioning joint by joint.
+
+[docs/calibration.md](docs/calibration.md) covers measuring the machine and site: wheel scales, plate-sinkage, shear ring, shear vane, drawbar pull and a year-on survival count. `ros2 run fs_bringup calibrate` fits each measurement into the calibration directory, and the simulator, autonomy stack and audit use it from the next launch. The drivers serve the topics in
 [docs/hardware_interface.md](docs/hardware_interface.md), which is generated from the simulation
 bridge and the URDF. The rest is in [docs/deployment.md](docs/deployment.md):
 - a Docker image with robot, sim and test targets, plus a compose file;
@@ -241,11 +281,12 @@ flowchart LR
 
 | Package | What is in it |
 |---|---|
-| `fs_interfaces` | `PlantRecord`, `HeadStatus`, `StabilityStatus`, `TractionStatus`, `Mission`, `Spot`, `RobotState`; action `PlantSpot`, action `TenderService`, service `ReserveBay` |
+| `fs_interfaces` | `PlantRecord`, `HwSafety`, `HeadStatus`, `StabilityStatus`, `TractionStatus`, `Mission`, `Spot`, `RobotState`; action `PlantSpot`, action `TenderService`, service `ReserveBay` |
 | `fs_gazebo` | C++ systems: `fs::Terramechanics`, `fs::AugerSoil`, `fs::PlugInventory`, `fs::SwerveDrive`, `fs::JointStateRate`; soil-map loader; site generator (`fs_gazebo.sites`) for the roadside, open-field and hill-slope worlds; scenery models |
 | `fs_description` | xacro models: `katar`, `jaal`, `pahadi` (sensors, drives, soil systems, plant-handling joints and controllers); CAD meshes |
 | `fs_autonomy` | Python library (`geometry`, `site`, `terramechanics`, `stability`, `planners`, `control`, `ekf`, `ik`, `head_model`) and nodes |
-| `fs_bringup` | `katar.launch.py`, `jaal.launch.py`, `pahadi.launch.py`, RViz layouts, `fs_bringup.sim` launch helpers |
+| `fs_bringup` | `katar.launch.py`, `jaal.launch.py`, `pahadi.launch.py`, `robot.launch.py` (a machine); RViz layouts; `fs_bringup.sim` launch helpers; tools: `physics_audit`, `interface_contract`, `calibrate`, `safety_fields` |
+| `fs_hardware` | `fs_hardware/CanopenSystem`, a ros2_control system for every joint drive on one CAN bus (CANopen CiA 402; `bus:=mock` simulates the drives). The nodes that turn the controllers into the hardware interface: `hw_bridge` (joint commands, swerve and track kinematics, odometry), `auger_driver`, `plug_inventory`, `traction_estimator`, `safety_bridge`. CAN maps in `config/<robot>_can.yaml` |
 
 ### Topics (per robot, e.g. `/jaal_1/...`)
 
@@ -341,11 +382,11 @@ Design points that came out of building and running it:
 
 ## 6. Limitations
 
-- Terramechanics is applied per contact with a quasi-static load split. Multi-pass compaction is remembered, but ruts do not change the terrain's geometry, there is no bulldozing, and tracks are modelled as three road-wheel segments per side. Moisture is fixed per site: rain, infiltration and drying are not simulated (the `wet` command raises it only round a pit).
+- Terramechanics is applied per contact with a quasi-static load split. There is no bulldozing, and tracks are modelled as three road-wheel segments per side. Ruts change the terrain only on the heightmap hill site, and only from one launch to the next. The flat sites' ground stays a plane, and the ruts are drawn on it. Moisture follows the season from one launch to the next (`date:=`) but stays fixed within a run.
 - Stones are visual only in Gazebo; the soil map tells the auger where rock is.
-- Of the regional steps, the auger bores, depths, water and plug handling are simulated; the saucer basin, mound and mulch are timed steps that leave a model behind, and amendments are counted in hoppers but do not change the soil. Survival is not modelled, so the prescriptions are judged by their sources, not by the simulation. Pahadi plants at 1.25 m from its path, the most its gripper can reach down into a hole on the downhill side, so the Aravalli contour trench (0.45 m uphill of the plant) comes about 6 cm under the edge of its track; a field machine would need a longer arm or would dig the trench from the next row.
+- Of the regional steps, the auger bores, depths, water and plug handling are simulated; the saucer basin, mound and mulch are timed steps that leave a model behind, and amendments are counted in hoppers but do not change the soil. Survival is a model tuned to the literature (see 2f), not a measurement. Pahadi's arm is 1.0 + 1.0 m and plants 1.45 m from its path, so the Aravalli contour trench, whose centre is 0.45 m uphill of the plant, clears its track by 13 cm.
 - Plugs are visuals that the inventory moves between links. They are not dynamic bodies, so a dropped or crushed plug cannot be simulated. A plug is planted by spawning a sapling model at the hole.
 - Gazebo's mass does not change as plugs and water are used. The stability monitor, and Katar's trailer-load diagram in the browser lab, account for it in software.
-- The safety monitor is not a certified safety function (ISO 25119 / ISO 18497). It tells people from objects only by whether they move, uses planar lidars, and has blind spots: behind Pahadi's rear module, and ahead of Katar's tractor, where the driver is responsible.
+- The safety monitor is not a certified safety function (ISO 25119 / ISO 18497). The certified layer is designed (docs/safety_concept.md, safety_fields) and modelled in simulation, but its PLC program, components and validation are still to be done with hardware. The CANopen drivers and hardware nodes have been run against simulated drives only. It tells people from objects only by whether they move, uses planar lidars, and has blind spots: behind Pahadi's rear module, and ahead of Katar's tractor, where the driver is responsible.
 - Jaal's lidars are single planar scans 0.30 m above ground: they see stumps, mounds, cattle and other robots, not stones. It needs GPU rendering (`--headless-rendering` works on this machine). With `lidar:=false` the safety field only knows other robots' positions. If the wheels spin without progress (traction monitor: immobilised), the navigator backs off and goes round.
 - Simulation speed: three Jaal robots run at about 0.6× real time on this laptop.

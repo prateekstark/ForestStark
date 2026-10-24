@@ -1,0 +1,4 @@
+#!/usr/bin/env python3
+from fs_hardware.nodes import auger_driver
+
+auger_driver()

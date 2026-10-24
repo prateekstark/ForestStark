@@ -379,7 +379,7 @@
    "parent": "arm_upper_link",
    "type": "revolute",
    "xyz": [
-    0.85,
+    1.0,
     0.0,
     0.0
    ],
@@ -401,7 +401,7 @@
    "parent": "arm_fore_link",
    "type": "revolute",
    "xyz": [
-    0.85,
+    1.0,
     0.0,
     0.0
    ],

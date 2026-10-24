@@ -70,12 +70,12 @@ FS.SIMS.C = {
   <div class="eq"><h5>Tool choice and the arm</h5>
     <div class="f">rock depth ≥ 0.25 m: auger · 0.12–0.25: pick (45 MJ/m³ in rock, η 0.5) · &lt; 0.12: seed balls</div>
     <div class="f"><var>q</var><sub>2</sub> = acos((<var>d</var>² − <var>l</var><sub>1</sub>² − <var>l</var><sub>2</sub>²)/(2<var>l</var><sub>1</sub><var>l</var><sub>2</sub>)),  <var>q</var><sub>3</sub> = π/2 − <var>q</var><sub>1</sub> − <var>q</var><sub>2</sub></div>
-    <p>Arm 0.85 + 0.85 m, tool 0.50 m, reach 1.25 m beside the track. GNSS antenna on a 1.27 m mast: without tilt compensation it sits 1.27 sin(roll) m downhill of where the planar model thinks.</p></div>`,
+    <p>Arm 1.0 + 1.0 m, tool 0.50 m, reach 1.45 m beside the track: the Aravalli contour trench (centre 0.45 m uphill of the plant) clears the track. GNSS antenna on a 1.27 m mast: without tilt compensation it sits 1.27 sin(roll) m downhill of where the planar model thinks.</p></div>`,
 };
 
 class Pahadi {
   constructor(p) {
-    this.p = p; this.T = terrain(p); this.soil = SOILS[p.soil]; this.r = FS.rng(5); this.t = 0;
+    this.p = p; this.T = terrain(p); this.soil = S.atMoisture(SOILS[p.soil], p.moist); this.r = FS.rng(5); this.t = 0;
     const T = this.T, x0 = -34, x1 = 30, n = 3, dh = p.rowsp * Math.tan(FS.rad(p.slope)), hStart = T.h(-2, -2 + (n - 1) * p.rowsp / 2);
     this.rows = []; for (let k = 0; k < n; k++) { let c = contour(T, hStart - k * dh, x0, x1); if (c.length < 2) continue; if (k % 2) c = c.reverse(); this.rows.push(new Path(c)); }
     const spawn = [-40, -4]; let pts = [spawn];
@@ -86,7 +86,7 @@ class Pahadi {
     this.path = new Path(pts);
     this.spots = []; let id = 0; const rg = FS.rng(1);
     this.rows.forEach((row, ri) => { for (let s = 2; s < row.length - 2; s += 2.5) { const [x, y, hd] = row.at(s), nl = [-Math.sin(hd), Math.cos(hd)], nn = T.normal(x, y), dn = Math.hypot(nn[0], nn[1]) || 1, down = [nn[0] / dn, nn[1] / dn];
-      const sg = ((nl[0] * down[0] + nl[1] * down[1] > 0) === (p.side === 'downhill')) ? 1 : -1, px = x + sg * 1.25 * nl[0], py = y + sg * 1.25 * nl[1];
+      const sg = ((nl[0] * down[0] + nl[1] * down[1] > 0) === (p.side === 'downhill')) ? 1 : -1, px = x + sg * 1.45 * nl[0], py = y + sg * 1.45 * nl[1];
       if (T.boulders.some(b => Math.hypot(b.x - px, b.y - py) < b.r + .4)) continue;
       const probe = T.depth(px, py) + FS.gauss(rg) * .03, tool = probe >= .25 ? 'auger' : probe >= .12 ? 'pick' : 'seedball';
       this.spots.push({ id: id++, x: px, y: py, s: this.path.project(x, y).s, side: sg, tool, depth: T.depth(px, py), state: 'todo' }); } });

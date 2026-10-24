@@ -191,3 +191,37 @@ TEST(Ruts, SecondPassOnlyPaysForExtraCompaction)
   m.Press(1.0, 2.0, 0.01, 0.3);
   EXPECT_FLOAT_EQ(m.Depth(1.0, 2.0), 0.03f);   // keeps the deepest
 }
+
+TEST(Ruts, SaveAndLoadRoundTrip)
+{
+  const std::string path = std::string(::testing::TempDir()) + "/fs_test.ruts";
+  RutMap a(0.1);
+  a.Press(-3.04, 7.21, 0.04, 0.3);
+  EXPECT_GT(a.Changes(), 0u);
+  ASSERT_TRUE(a.Save(path));
+  EXPECT_EQ(a.Changes(), 0u);
+  RutMap b;
+  ASSERT_TRUE(b.Load(path));
+  EXPECT_EQ(b.Cells(), a.Cells());
+  EXPECT_FLOAT_EQ(b.Depth(-3.04, 7.21), 0.04f);
+  EXPECT_NEAR(b.MaxDepth(), 0.04, 1e-6);
+}
+
+TEST(SoilMap, ReadsCalibratedMoistureColumns)
+{
+  const std::string path = std::string(::testing::TempDir()) + "/fs_cal.soilmap";
+  {
+    std::ofstream f(path);
+    f << "name t\norigin 0 0\nresolution 1\nsize 2 2\n"
+         "soil 0 sandy_loam 0.9 52.53 1127.97 7.5 20 0.025 4 0.18 5.5 0.5 0.6\n"
+         "soil 1 heavy_clay 0.13 12.7 1555.95 68.95 34 0.01 14\n"
+         "layer elevation\n0 0\n0 0\nlayer soil\n0 1\n0 1\n";
+  }
+  SoilMap m;
+  m.Load(path);
+  const auto loam = *m.Sample(0, 0).soil, clay = *m.Sample(1, 0).soil;
+  EXPECT_DOUBLE_EQ(loam.c, 7.5);
+  EXPECT_DOUBLE_EQ(loam.refMoisture, 0.18);
+  EXPECT_DOUBLE_EQ(loam.wetSoftening, 5.5);
+  EXPECT_DOUBLE_EQ(clay.wetSoftening, Soil("heavy_clay").wetSoftening);   // no columns: the table's
+}

@@ -49,7 +49,13 @@ void SoilMap::Load(const std::string &path)
     {
       int idx; SoilParams s;
       if (!(ls >> idx >> s.name >> s.n >> s.kc >> s.kphi >> s.c >> s.phiDeg >> s.K >> s.eb)) fail("bad soil line");
-      FillMoisture(s);
+      // optional moisture response (refMoisture wetSoftening capillaryC trueCohesion); else the built-in table's
+      double mr, ms, mc, mt;
+      if (ls >> mr >> ms >> mc >> mt)
+      {
+        s.refMoisture = mr; s.wetSoftening = ms; s.capillaryC = mc; s.trueCohesion = mt;
+      }
+      else FillMoisture(s);
       table[idx] = s;
     }
     else if (key == "layer")

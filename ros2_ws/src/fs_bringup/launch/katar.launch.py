@@ -16,6 +16,9 @@ Arguments
   gnss          rtk | standard | none (odometry only)
   soil          override the region's verge soil: sandy_loam | dry_sand | clayey_soil | heavy_clay | lateritic_gravel
   people        safety scenarios: all (= tool,stand:2.5) or a list such as tool,cross; off by default
+  date          planting day MM-DD: soil moisture from the season's water balance (default: the region's
+                planting-time mean); also the start of the survival model's first year
+  ruts          keep (default): ruts from earlier runs on this site stay | clear
   headless, rtf, rviz, seed, inspect
 """
 from launch import LaunchDescription
@@ -27,7 +30,7 @@ from fs_bringup import sim
 
 ARGS = {"region": "", "mode": "stop_and_go", "spacing": "", "speed_kmh": "2.5", "weave_m": "0.25", "reaction_s": "0.8",
         "surveyed": "true", "gnss": "rtk", "soil": "", "rail_min": "-1.8", "rail_max": "0.6", "deep_auger": "auto",
-        "headless": "false", "rtf": "1.0", "rviz": "true", "seed": "7", "log_dir": "", "inspect": "false", "people": ""}
+        "headless": "false", "rtf": "1.0", "rviz": "true", "seed": "7", "log_dir": "", "inspect": "false", "people": "", "date": "", "ruts": "keep"}
 
 
 def setup(context):
@@ -35,12 +38,13 @@ def setup(context):
     seed = int(c["seed"])
     region, spacing, _ = sim.region_setup("katar", "roadside", c)
     deep = region == "ignp_canal" if c["deep_auger"] == "auto" else sim.on(c["deep_auger"])
-    site_dir = sim.make_site("roadside", seed=seed, soil=c["soil"] or None, spacing=spacing, region=region)
+    site_dir = sim.make_site("roadside", seed=seed, soil=c["soil"] or None, spacing=spacing, region=region,
+                             date=c["date"] or None, ruts=c["ruts"] != "clear")
     site = sim.load_site_yaml(site_dir, "roadside")
     site_file = site_dir / "roadside.yaml"
     ns = "katar"
     common = {"site_file": str(site_file), "robot": ns, "use_sim_time": True}
-    head = sim.head_params("katar", deep_auger=deep, rail_min=float(c["rail_min"]), rail_max=float(c["rail_max"]))
+    head = sim.head_params("katar", date=c["date"], deep_auger=deep, rail_min=float(c["rail_min"]), rail_max=float(c["rail_max"]))
     actions = sim.gazebo(site_dir / "roadside.sdf", sim.on(c["headless"]), float(c["rtf"]))
     actions += sim.spawn_robot("katar", ns, site_dir, site, lidar=False, inspect=sim.on(c["inspect"]),
                                xacro_args={"deep_auger": "true" if deep else "false"})

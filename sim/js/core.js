@@ -56,13 +56,14 @@ FS.Path = class {
 };
 
 /* ---------------- soil physics: mirrors fs_gazebo/include/fs_gazebo/SoilModel.hh ---------------- */
-// Bekker constants (Wong) + specific boring energy, MJ/m^3.
+// Bekker constants (Wong) + specific boring energy, MJ/m^3; moisture response: reference moisture,
+// softening above it, capillary cohesion of damp sand (kPa), share of c that is true cohesion.
 FS.SOILS = {
-  dry_sand:         { label: 'Dry sand',         n: 1.10, kc: 0.99,  kphi: 1528.43, c: 1.04,  phi: 28, K: .025, eb: 2.5 },
-  sandy_loam:       { label: 'Sandy loam',       n: 0.90, kc: 52.53, kphi: 1127.97, c: 4.83,  phi: 20, K: .025, eb: 4.0 },
-  clayey_soil:      { label: 'Clayey soil',      n: 0.50, kc: 13.19, kphi: 692.15,  c: 4.14,  phi: 13, K: .020, eb: 9.0 },
-  heavy_clay:       { label: 'Heavy clay',       n: 0.13, kc: 12.70, kphi: 1555.95, c: 68.95, phi: 34, K: .010, eb: 14.0 },
-  lateritic_gravel: { label: 'Lateritic gravel', n: 0.80, kc: 30.00, kphi: 4000.0,  c: 10.0,  phi: 35, K: .015, eb: 22.0 },
+  dry_sand:         { label: 'Dry sand',         n: 1.10, kc: 0.99,  kphi: 1528.43, c: 1.04,  phi: 28, K: .025, eb: 2.5,  ref: .05, soft: 0, cap: 3.0, tc: 0 },
+  sandy_loam:       { label: 'Sandy loam',       n: 0.90, kc: 52.53, kphi: 1127.97, c: 4.83,  phi: 20, K: .025, eb: 4.0,  ref: .15, soft: 4, cap: 0.5, tc: .6 },
+  clayey_soil:      { label: 'Clayey soil',      n: 0.50, kc: 13.19, kphi: 692.15,  c: 4.14,  phi: 13, K: .020, eb: 9.0,  ref: .20, soft: 6, cap: 0,   tc: 1 },
+  heavy_clay:       { label: 'Heavy clay',       n: 0.13, kc: 12.70, kphi: 1555.95, c: 68.95, phi: 34, K: .010, eb: 14.0, ref: .25, soft: 8, cap: 0,   tc: 1 },
+  lateritic_gravel: { label: 'Lateritic gravel', n: 0.80, kc: 30.00, kphi: 4000.0,  c: 10.0,  phi: 35, K: .015, eb: 22.0, ref: .10, soft: 2, cap: 0,   tc: .5 },
 };
 const S = FS.soil = {
   modulus: (s, b) => (s.kc / Math.max(b, 1e-3) + s.kphi) * 1e3,
@@ -76,6 +77,17 @@ const S = FS.soil = {
     let lo = 0, hi = 1; for (let k = 0; k < 40; k++) { const m = (lo + hi) / 2; if (S.drawbar(s, loads, b, l, m) >= need) hi = m; else lo = m; } return hi;
   },
   moisture: m => clamp(1.6 - 2.4 * m, .7, 1.6),
+  /* Moisture: wet soil softens above its reference, dry soil hard-sets, damp sand gains capillary cohesion. */
+  strength: (s, m) => { const d = m - s.ref; return d > 0 ? Math.max(.3, Math.exp(-s.soft * d)) : Math.min(1.4, 1 - .5 * s.soft * d); },
+  capillary: (s, m) => s.cap * clamp((m - .03) / .07, 0, 1) * clamp((.35 - m) / .2, 0, 1),
+  atMoisture: (s, m) => { const f = S.strength(s, m), k = Math.pow(f, 1.5 * s.n);
+    return { ...s, kc: s.kc * k, kphi: s.kphi * k, c: s.c * f + S.capillary(s, m), phi: s.phi * clamp(.6 + .4 * f, .6, 1.1) }; },
+  /* Height an auger-hole wall stands (Rankine x2 arching / 1.5 disturbance); spoil that falls in below it. */
+  wallHeight: (s, m) => { const w = S.atMoisture(s, m), c = s.tc * s.c * S.strength(s, m) + S.capillary(s, m);
+    return (2 / 1.5) * 4 * c * 1e3 / 16000 * Math.tan((45 + w.phi / 2) * Math.PI / 180); },
+  collapse: (s, m, d) => { const hc = S.wallHeight(s, m); return d > hc ? .5 * (d - hc) : 0; },
+  /* A later pass over a rut pressed to zPrev only pays for the extra compaction (+15 % rebound). */
+  multipass: (s, z, zPrev, b) => { const f = S.compaction(s, z, b); return zPrev <= 0 ? f : Math.max(f - S.compaction(s, Math.min(z, zPrev), b), .15 * f); },
   /* Auger in a material of specific energy e (J/m^3): power- and thrust-limited feed. */
   bore: (head, e) => {
     const A = Math.PI * head.D * head.D / 4, epm = Math.max(e, 1) * A;
@@ -98,11 +110,15 @@ FS.cycle = (headName, soil, moisture, depth, water, extra = {}) => {
   const bore = depth / Math.max(r.feed, 1e-4);
   const phases = [];
   if (extra.locate) phases.push(['locate', extra.locate]);
-  phases.push(['lower', h.rest / h.free], ['bore', bore], ['retract', (h.rest + depth) / h.retract],
-    ['place', h.place], ['close', h.close], ['water', water / h.pump]);
+  phases.push(['lower', h.rest / h.free], ['bore', bore], ['retract', (h.rest + depth) / h.retract]);
+  // dry sand slumps into the pit once the flight is out: pour the pre-water in, re-bore through the loose spoil
+  const caved = S.collapse(soil, moisture, depth);
+  if (caved > .03) phases.push(['pre-water', 3 / h.pump], ['re-bore', (h.rest + depth) / h.free + caved / Math.max(r.feed, 1e-4) * .05],
+    ['retract', (h.rest + depth) / h.retract]);
+  phases.push(['place', h.place], ['close', h.close], ['water', water / h.pump]);
   if (extra.halfmoon) phases.push(['half-moon', extra.halfmoon]);
   if (extra.stow) phases.push(['stow', extra.stow]);
-  return { phases, total: phases.reduce((a, p) => a + p[1], 0), bore, energy: e * Math.PI * h.D * h.D / 4 * depth / h.eta / 1000, rate: r };
+  return { phases, total: phases.reduce((a, p) => a + p[1], 0), bore, energy: e * Math.PI * h.D * h.D / 4 * depth / h.eta / 1000, rate: r, caved };
 };
 
 /* Force-angle tip-over margins (Papadopoulos & Rey). contacts: [[x,y,z]...] gravity-aligned (z up). */
@@ -405,7 +421,7 @@ FS.buildJaal = () => {
   add(root, B(2.8, .45, 1.3), MAT.yellow, 0, .6, 0); add(root, B(2.84, .1, 1.34), MAT.graphite, 0, .42, 0); add(root, B(2.7, .05, 1.24), MAT.graphite, 0, .85, 0);
   [[.95, 1], [.95, -1], [-.95, 1], [-.95, -1]].forEach(([x, s]) => {
     const piv = new THREE.Group(); piv.position.set(x, .38, s * .83); root.add(piv); add(piv, B(.16, .3, .12), MAT.graphite, 0, .24, 0);
-    r.spins.push(FS.wheel(piv, .38, .22, 0, 0, 0, MAT.graphite, 10)); r.steer.push(piv); add(root, B(.86, .05, .3), MAT.yellow, x, .86, s * .83);
+    r.spins.push(FS.wheel(piv, .38, .32, 0, 0, 0, MAT.graphite, 10)); r.steer.push(piv); add(root, B(.86, .05, .3), MAT.yellow, x, .86, s * .83);
   });
   [1, -1].forEach(s => { add(root, B(.1, .2, 1.2), MAT.graphite, s * 1.45, .5, 0); add(root, B(.02, .05, 1.0), MAT.lens, s * 1.505, .55, 0); });
   r.drums = [.55, -.43].map(cx => { const d = new THREE.Group(); d.position.set(cx, .88, 0); root.add(d);
@@ -440,12 +456,12 @@ FS.buildPahadi = () => {
   [.6, -.28].forEach(x => [-.3, .3].forEach(z => add(r.Rm, B(.04, .86, .04), MAT.steel, x, 1.27, z)));
   add(r.Rm, B(.95, .02, .66), MAT.shade, .16, 1.72, 0); add(r.Rm, C(.18, .18, .42, 16), MAT.hopper, -.47, 1.06, 0); add(r.Rm, C(.05, .05, .09, 10), MAT.beacon, -.47, 1.35, 0);
   add(r.joint, C(.07, .07, .5, 10), MAT.steel, 0, .62, 0); const bl = add(r.joint, C(.2, .2, .3, 14), MAT.graphite, 0, .62, 0); bl.rotation.z = Math.PI / 2;
-  // arm: base on the front module (x .25), yaw, shoulder, elbow, wrist; lengths .85/.85, tool .50
+  // arm: base on the front module (x .25), yaw, shoulder, elbow, wrist; lengths 1.0/1.0, tool .50
   const base = new THREE.Group(); base.position.set(.25, .86, 0); r.F.add(base); add(base, C(.13, .15, .08, 16), MAT.graphite, 0, .04, 0);
   const yaw = new THREE.Group(); yaw.position.y = .08; base.add(yaw); add(yaw, B(.16, .14, .16), MAT.yellow, 0, .07, 0);
-  const sh = new THREE.Group(); sh.position.y = .12; yaw.add(sh); let j = add(sh, C(.07, .07, .2, 12), MAT.graphite); j.rotation.x = Math.PI / 2; add(sh, B(.85, .09, .11), MAT.yellow, .425, 0, 0);
-  const el = new THREE.Group(); el.position.x = .85; sh.add(el); j = add(el, C(.06, .06, .18, 12), MAT.graphite); j.rotation.x = Math.PI / 2; add(el, B(.85, .08, .09), MAT.yellow, .425, 0, 0);
-  const wr = new THREE.Group(); wr.position.x = .85; el.add(wr); j = add(wr, C(.05, .05, .15, 12), MAT.graphite); j.rotation.x = Math.PI / 2; add(wr, B(.14, .12, .12), MAT.graphite, .07, 0, 0);
+  const sh = new THREE.Group(); sh.position.y = .12; yaw.add(sh); let j = add(sh, C(.07, .07, .2, 12), MAT.graphite); j.rotation.x = Math.PI / 2; add(sh, B(1.0, .09, .11), MAT.yellow, .5, 0, 0);
+  const el = new THREE.Group(); el.position.x = 1.0; sh.add(el); j = add(el, C(.06, .06, .18, 12), MAT.graphite); j.rotation.x = Math.PI / 2; add(el, B(1.0, .08, .09), MAT.yellow, .5, 0, 0);
+  const wr = new THREE.Group(); wr.position.x = 1.0; el.add(wr); j = add(wr, C(.05, .05, .15, 12), MAT.graphite); j.rotation.x = Math.PI / 2; add(wr, B(.14, .12, .12), MAT.graphite, .07, 0, 0);
   const bit = new THREE.Group(); wr.add(bit); const tg = C(.035, .05, .36, 8); tg.rotateZ(-Math.PI / 2); tg.translate(.32, 0, 0); add(bit, tg, MAT.steel);
   for (let i = 0; i < 4; i++) { const f = add(bit, B(.02, .1, .03), MAT.steel, .2 + i * .07, 0, 0); f.rotation.x = i * .8; }
   // three's rotation.z is the opposite sense to the URDF pitch (+y): negate
@@ -457,7 +473,7 @@ FS.buildPahadi = () => {
 
 /* Pahadi arm IK, same as fs_autonomy/ik.py. target in front-module frame (x fwd, y left, z up). */
 FS.armIK = (tx, ty, tz, clear = .08) => {
-  const bx = .25, sz = .85, l1 = .85, l2 = .85, tool = .5;
+  const bx = .25, sz = .85, l1 = 1.0, l2 = 1.0, tool = .5;
   const yaw = Math.atan2(ty, tx - bx), r = Math.hypot(tx - bx, ty), wz = tz + clear + tool - sz, d = Math.hypot(r, wz);
   if (d > l1 + l2 - 1e-3) return null;
   const q2 = Math.acos(clamp((d * d - l1 * l1 - l2 * l2) / (2 * l1 * l2), -1, 1)), phi = Math.atan2(-wz, r);

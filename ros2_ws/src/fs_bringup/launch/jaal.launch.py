@@ -16,6 +16,8 @@ Arguments
   cows          cattle wandering in the field (2)
   lidar         front and rear safety lidars (true; needs GPU rendering)
   people        safety scenarios for jaal_1: all (= cross,tool,stand,obstacle) or a list; off by default
+  date          planting day MM-DD (soil moisture from the season's water balance)
+  ruts          keep | clear
   headless, rtf, rviz, seed, soil
 """
 import os
@@ -29,7 +31,7 @@ from fs_bringup import sim
 
 ARGS = {"region": "", "robots": "3", "field": "demo", "pattern": "square", "spacing": "", "plugs": "", "stock_plugs": "",
         "bays": "1", "rtk_policy": "continue", "dropouts": "0", "cows": "2", "lidar": "true", "cruise": "1.0",
-        "headless": "false", "rtf": "1.0", "rviz": "true", "seed": "11", "soil": "", "log_dir": "", "inspect": "false", "people": ""}
+        "headless": "false", "rtf": "1.0", "rviz": "true", "seed": "11", "soil": "", "log_dir": "", "inspect": "false", "people": "", "date": "", "ruts": "keep"}
 
 
 def setup(context):
@@ -41,7 +43,8 @@ def setup(context):
     plugs = int(c["plugs"]) if c["plugs"] else (18 if demo else 360)
     stock = int(c["stock_plugs"]) if c["stock_plugs"] else (36 if demo else -1)
     region, spacing, _ = sim.region_setup("jaal", "open_field", c)
-    site_dir = sim.make_site("open_field", seed=seed, soil=c["soil"] or None, region=region)
+    site_dir = sim.make_site("open_field", seed=seed, soil=c["soil"] or None, region=region,
+                             date=c["date"] or None, ruts=c["ruts"] != "clear")
     site = sim.load_site_yaml(site_dir, "open_field")
     site_file = site_dir / "open_field.yaml"
     robots = [f"jaal_{i + 1}" for i in range(n)]
@@ -53,7 +56,7 @@ def setup(context):
     for i, ns in enumerate(robots):
         actions += sim.spawn_robot("jaal", ns, site_dir, site, lidar, inspect=sim.on(c["inspect"]))
         entries += sim.bridge_entries("jaal", ns, lidar)
-        head = sim.head_params("jaal", plugs=plugs)
+        head = sim.head_params("jaal", plugs=plugs, date=c["date"])
         actions += sim.robot_core("jaal", ns, site_file, world, head, dropouts=float(c["dropouts"]), seed=seed + i,
                                   lidar=lidar, peers=robots)
         actions.append(Node(package="fs_autonomy", executable="jaal_navigator", namespace=ns, output="screen",

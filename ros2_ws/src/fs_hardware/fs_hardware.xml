@@ -1,0 +1,5 @@
+<library path="fs_hardware">
+  <class name="fs_hardware/CanopenSystem" type="fs_hardware::CanopenSystem" base_class_type="hardware_interface::SystemInterface">
+    <description>Every ForestStark joint drive on one CAN bus, CANopen CiA 402 (or simulated drives with bus=mock).</description>
+  </class>
+</library>

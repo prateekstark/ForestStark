@@ -64,7 +64,7 @@ FS.SIMS.A = {
 class Katar {
   constructor(p) {
     this.p = p; this.r = FS.rng(7); this.t = 0;
-    this.soil = SOILS[p.soil];
+    this.soil = S.atMoisture(SOILS[p.soil], p.moist);
     const sStart = LINE.project(...CL.at(40).slice(0, 2)).s, sEnd = LINE.project(...CL.at(380).slice(0, 2)).s;
     this.spots = [];
     const trees = []; const tr = FS.rng(7);

@@ -38,7 +38,7 @@ function splitRows(rows, n) {
 class Fleet {
   constructor(p, headless = false) {
     this.p = p; this.headless = headless; this.t = 0; this.r = FS.rng(11);
-    this.f = makeField(p, 11); this.soil = SOILS[p.soil];
+    this.f = makeField(p, 11); this.soil = FS.soil.atMoisture(SOILS[p.soil], p.moist);
     this.cyc = FS.cycle('jaal', this.soil, p.moist, .25, .5); this.cycStone = FS.cycle('jaal', SOILS.lateritic_gravel, p.moist, .03, 0);
     this.stock = p.stock; this.restockAt = null; this.bays = new Array(p.bays).fill(null); this.queue = [];
     this.events = []; this.timeline = []; this.series = { t: [], planted: [], soc: [] }; this.lastSample = -99; this.errs = [];

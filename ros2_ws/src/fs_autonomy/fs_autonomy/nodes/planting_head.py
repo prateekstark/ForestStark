@@ -62,6 +62,7 @@ from tf2_ros import Buffer, TransformListener
 
 from .. import ik
 from .. import silviculture as sv
+from .. import survival
 from ..geometry import transform_to_matrix, wrap
 from ..planners import choose_tool
 from ..ros_common import LATCHED, load_site, lookup, param, parse_json, pt, sim_now, wait_sim
@@ -515,6 +516,7 @@ class PlantingHead(Node):
         self.rng = np.random.default_rng(int(param(self, "seed", 3)))
         self.region = param(self, "region", "") or self.site.get("region") or ""
         self.deep_kit = bool(param(self, "deep_auger", False))
+        self.date = param(self, "date", "")          # planting day MM-DD for the survival outlook (region's usual)
         self.hopper = dict(HOPPERS[self.kind])
         elev = self.site.soil_map.layers["elevation"]
         self.elev_range = (float(elev.min()), float(elev.max()))
@@ -1025,6 +1027,10 @@ class PlantingHead(Node):
         self.done_spots.add(g.spot_id)
         rec.method = p.summary() if rec.outcome == "planted" else ("seed balls" if rec.outcome == "seeded" else "")
         rec.deviations = "; ".join(dev)
+        if rec.outcome == "planted" and self.region in survival.PLANTING_DATE:
+            o = survival.predict(self.region, rec.species, p.method, smp, hole_depth=rec.hole_depth_m,
+                                 water_l=rec.water_l, date=self.date or None, seed=g.spot_id)
+            rec.survival_1y, rec.survival_risk = float(o.survival), o.risk
 
         self.feedback("log")
         if hole is None:
@@ -1042,7 +1048,9 @@ class PlantingHead(Node):
         self.set_phase("idle")
         lvl = self.get_logger().info if success else self.get_logger().warning
         lvl(f"spot {g.spot_id}: {rec.outcome} ({rec.tool}) err {rec.error_m * 100:.1f} cm, "
-            f"{rec.cycle_time_s:.1f} s, {rec.bore_energy_kj:.1f} kJ {rec.reason} | {self.mech.stock()} plugs left"
+            f"{rec.cycle_time_s:.1f} s, {rec.bore_energy_kj:.1f} kJ"
+            + (f", survival {rec.survival_1y * 100:.0f} %" if rec.survival_1y else "")
+            + f" {rec.reason} | {self.mech.stock()} plugs left"
             + (f"\n    {p.region} / {rec.microsite}: {rec.species}; {rec.method}"
                + (f"\n    deviations: {rec.deviations}" if rec.deviations else "") if p.region else ""))
         gh.succeed()

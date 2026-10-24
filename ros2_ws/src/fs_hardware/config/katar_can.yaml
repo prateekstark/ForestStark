@@ -1,0 +1,23 @@
+# Katar: one CiA 402 drive per joint on the machine's CAN bus (fs_hardware/CanopenSystem).
+# Drive: tractor's own driveline (the driver drives); rear wheel speed sensors only.
+# mode: position | velocity (command interface) | sensor (state only: an encoder on a passive joint)
+# counts_per_unit: drive counts per m (prismatic) or per rad (revolute, continuous), after any gearbox
+# rated: N or N m that the drive's torque-actual per mille refers to
+# Set node ids and scales to the as-built machine; `ros2 launch fs_hardware hardware.launch.py bus:=mock` runs it on a desk.
+bus: can0
+bitrate: 500000
+cycle_s: 0.01
+joints:
+  - {name: rear_left_wheel_joint, node: 1, mode: sensor, counts_per_unit: 625823, rated: 7000}
+  - {name: rear_right_wheel_joint, node: 2, mode: sensor, counts_per_unit: 625823, rated: 7000}
+  - {name: hitch_joint, node: 3, mode: sensor, counts_per_unit: 1043038, rated: 1000}
+  - {name: sled_joint, node: 4, mode: position, counts_per_unit: 100000, rated: 20000}
+  - {name: carriage_joint, node: 5, mode: position, counts_per_unit: 100000, rated: 20000}
+  - {name: turret_joint, node: 6, mode: position, counts_per_unit: 1043038, rated: 2000}
+  - {name: carousel_joint, node: 7, mode: position, counts_per_unit: 1043038, rated: 200}
+  - {name: duckbill_feed_joint, node: 8, mode: position, counts_per_unit: 100000, rated: 5000}
+  - {name: jaw_l_joint, node: 9, mode: position, counts_per_unit: 1043038, rated: 500}
+  - {name: jaw_r_joint, node: 10, mode: position, counts_per_unit: 1043038, rated: 500}
+  - {name: tamp_joint, node: 11, mode: position, counts_per_unit: 100000, rated: 3000}
+  - {name: auger_feed_joint, node: 12, mode: velocity, counts_per_unit: 100000, rated: 20000, mock_contact: 0.35}
+  - {name: auger_spin_joint, node: 13, mode: velocity, counts_per_unit: 208608, rated: 3000}

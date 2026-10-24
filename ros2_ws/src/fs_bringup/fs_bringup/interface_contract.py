@@ -37,7 +37,7 @@ ABOUT = {
 def joint_limits(kind: str) -> dict:
     urdf = ET.fromstring(sim.robot_description(kind, kind, Path("/tmp/none.soilmap"), lidar=True))
     out = {}
-    for j in urdf.iter("joint"):
+    for j in urdf.findall("joint"):
         lim = j.find("limit")
         if lim is not None:
             out[j.get("name")] = (j.get("type"), lim.get("lower", "-"), lim.get("upper", "-"),

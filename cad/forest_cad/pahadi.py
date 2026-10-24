@@ -70,10 +70,10 @@ def build() -> Robot:
     R.add("arm_base_link", Part("base", cyl(140, 80, at=(0, 0, 40)), "graphite", hollow=0.6))
     R.add("arm_yaw_link", Part("yaw", box(160, 140, 160, at=(0, 0, 70), fillet=12), "yellow", hollow=0.3))
     R.add("arm_upper_link", Part("clevis", cyl(70, 200, axis="y"), "graphite", hollow=0.5),
-          Part("beam", box(850, 90, 110, at=(425, 0, 0), fillet=15), "yellow", hollow=0.2),
-          Part("cylinder", rod((80, 60, -40), (600, 60, 20), 22), "steel", hollow=0.5))
+          Part("beam", box(1000, 90, 110, at=(500, 0, 0), fillet=15), "yellow", hollow=0.2),
+          Part("cylinder", rod((80, 60, -40), (700, 60, 20), 22), "steel", hollow=0.5))
     R.add("arm_fore_link", Part("clevis", cyl(60, 180, axis="y"), "graphite", hollow=0.5),
-          Part("beam", box(850, 80, 90, at=(425, 0, 0), fillet=12), "yellow", hollow=0.2))
+          Part("beam", box(1000, 80, 90, at=(500, 0, 0), fillet=12), "yellow", hollow=0.2))
     R.add("arm_wrist_link",
           Part("knuckle", cyl(50, 150, axis="y"), "graphite", hollow=0.5),
           Part("tool_block", box(140, 120, 120, at=(70, 0, 0), fillet=8), "graphite", hollow=0.4),

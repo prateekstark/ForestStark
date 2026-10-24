@@ -1,0 +1,4 @@
+#!/usr/bin/env python3
+from fs_hardware.nodes import plug_inventory
+
+plug_inventory()

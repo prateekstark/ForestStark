@@ -12,7 +12,9 @@
 // vertisol loses most of its traction, damp sand gains a little. Ground that any robot in the
 // world has already pressed down is remembered on a shared rut map, so a wheel that follows a
 // rut (a trailer behind its tractor, a second Jaal on the first one's track) only pays for the
-// extra compaction (fs::soil::MultiPassResistance).
+// extra compaction (fs::soil::MultiPassResistance). The rut map is kept beside the soil map
+// (<soil_map>.ruts), loaded at start and saved every few seconds, so ruts outlast the run: the site
+// generator draws them and, on a heightmap site, lowers the terrain under them.
 //
 // Normal loads come from a quasi-static distribution of the whole model's weight over the
 // contacts that touch the ground (soil-map elevation + <contact_tolerance>). Soil type,
@@ -114,6 +116,12 @@ public:
     bristle_ = _sdf->Get<double>("bristle_deflection", 0.005).first;
     latFactor_ = _sdf->Get<double>("lateral_factor", 0.85).first;
     ruts_ = SharedRuts(mapPath.empty() ? "uniform:" + def : mapPath);
+    if (!mapPath.empty() && _sdf->Get<bool>("keep_ruts", true).first)
+    {
+      rutFile_ = mapPath + ".ruts";
+      if (ruts_->Cells() == 0 && ruts_->Load(rutFile_))
+        gzmsg << "[fs::Terramechanics] " << ruts_->Cells() << " rut cells from earlier runs\n";
+    }
 
     for (auto w = _sdf->FindElement("wheel"); w; w = w->GetNextElement("wheel"))
     {
@@ -248,6 +256,11 @@ public:
     }
 
     simTime_ += dt;
+    if (!rutFile_.empty() && ruts_->Changes() > 0 && simTime_ - lastSave_ > 5.0)
+    {
+      lastSave_ = simTime_;
+      ruts_->Save(rutFile_);
+    }
     if (simTime_ - lastPub_ >= publishPeriod_)
     {
       lastPub_ = simTime_;
@@ -308,7 +321,8 @@ private:
   bool resolved_{false};
   std::string topic_;
   double publishPeriod_{0.1}, contactTol_{0.06}, bristle_{0.005}, latFactor_{0.85};
-  double simTime_{0}, lastPub_{-1};
+  double simTime_{0}, lastPub_{-1}, lastSave_{0};
+  std::string rutFile_;
   std::string lastSoil_{""};
   double lastMoisture_{0};
   std::shared_ptr<soil_ns::RutMap> ruts_;

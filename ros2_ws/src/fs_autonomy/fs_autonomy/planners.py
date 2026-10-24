@@ -205,7 +205,7 @@ def choose_tool(rock_depth: float, hole_depth: float = 0.25) -> str:
     return "seedball"
 
 
-def contour_plan(site, n_rows: int = 3, row_spacing: float = 4.0, spacing: float = 2.5, reach: float = 1.25,
+def contour_plan(site, n_rows: int = 3, row_spacing: float = 4.0, spacing: float = 2.5, reach: float = 1.45,
                  side: str = "downhill", probe_sigma: float = 0.03, seed: int = 1):
     """Drive paths along contours and the planting spots beside them.
 

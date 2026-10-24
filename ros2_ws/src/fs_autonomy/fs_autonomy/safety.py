@@ -67,10 +67,13 @@ class SafetyConfig:
     tool_r: float = 2.0
     min_scale: float = 0.2        # slowest crawl inside a slow zone
     detour_clear: float = 1.1     # corridor margin + clearance a detour keeps from the blocker
+    chain: object = None          # the certified layer's stop chain (safety_fields.StopChain): this layer
+    chain_margin: float = 0.25    # always stops this much before that layer's protective field would trip
 
     @staticmethod
     def for_robot(kind: str) -> "SafetyConfig":
-        cfg = SafetyConfig(FOOTPRINTS[kind])
+        from .safety_fields import CHAINS, BANDS
+        cfg = SafetyConfig(FOOTPRINTS[kind], chain=CHAINS[kind] if BANDS[kind] else None)
         if kind == "katar":       # a driven tractor: the driver brakes for traffic; the monitor guards the boom strip
             cfg.stop_static, cfg.slow_static = 0.0, 0.0
         if kind == "pahadi":      # slow machine on a slope: stops earlier, crawls slower
@@ -321,6 +324,9 @@ def assess(objs, cmd, cfg: SafetyConfig, tool_xy=None) -> Assessment:
                               else (cfg.stop_static, cfg.slow_static, cfg.margin_static))
         if not person:                       # a protective field that shrinks with speed (people keep the full one)
             stop = min(stop, max(cfg.stop_min, 0.4 + sp * sp / (2 * cfg.decel)))
+        if cfg.chain is not None:            # never inside the certified layer's protective field at this speed
+            from .safety_fields import protective_length
+            stop = max(stop, protective_length(sp, cfg.chain) + cfg.chain_margin)
         along, across = bx * ux + by * uy, -bx * uy + by * ux
         gap = along - tr.r - front
         k = 1.0

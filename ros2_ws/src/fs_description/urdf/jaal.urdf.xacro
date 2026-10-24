@@ -38,7 +38,7 @@
       <inertial><mass value="8"/><inertia ixx="0.1" iyy="0.1" izz="0.1" ixy="0" ixz="0" iyz="0"/></inertial>
       <xacro:mesh_visual robot="${R}" link="steer_${tag}_link"/>
     </link>
-    <xacro:wheel effort="900" name="wheel_${tag}" parent="steer_${tag}_link" xyz="0 0 -0.25" r="0.38" w="0.22" m="35" robot="${R}"/>
+    <xacro:wheel effort="900" name="wheel_${tag}" parent="steer_${tag}_link" xyz="0 0 -0.25" r="0.38" w="0.32" m="42" robot="${R}"/>
   </xacro:macro>
   <xacro:module tag="fl" x="0.95" y="0.83"/>
   <xacro:module tag="fr" x="0.95" y="-0.83"/>
@@ -153,10 +153,10 @@
     <plugin filename="fs_terramechanics_system" name="fs::Terramechanics">
       <soil_map>$(arg soil_map)</soil_map>
       <topic>/model/${ns}/terramechanics</topic>
-      <xacro:tm_wheel link="wheel_fl_link" r="0.38" b="0.22" l="0.19"/>
-      <xacro:tm_wheel link="wheel_fr_link" r="0.38" b="0.22" l="0.19"/>
-      <xacro:tm_wheel link="wheel_rl_link" r="0.38" b="0.22" l="0.19"/>
-      <xacro:tm_wheel link="wheel_rr_link" r="0.38" b="0.22" l="0.19"/>
+      <xacro:tm_wheel link="wheel_fl_link" r="0.38" b="0.32" l="0.19"/>
+      <xacro:tm_wheel link="wheel_fr_link" r="0.38" b="0.32" l="0.19"/>
+      <xacro:tm_wheel link="wheel_rl_link" r="0.38" b="0.32" l="0.19"/>
+      <xacro:tm_wheel link="wheel_rr_link" r="0.38" b="0.32" l="0.19"/>
     </plugin>
     <plugin filename="fs_auger_soil_system" name="fs::AugerSoil">
       <soil_map>$(arg soil_map)</soil_map>

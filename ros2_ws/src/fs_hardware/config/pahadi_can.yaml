@@ -1,0 +1,24 @@
+# Pahadi: one CiA 402 drive per joint on the machine's CAN bus (fs_hardware/CanopenSystem).
+# Drive: one hydraulic motor per track (velocity), proxied by the middle road wheel of each track.
+# mode: position | velocity (command interface) | sensor (state only: an encoder on a passive joint)
+# counts_per_unit: drive counts per m (prismatic) or per rad (revolute, continuous), after any gearbox
+# rated: N or N m that the drive's torque-actual per mille refers to
+# Set node ids and scales to the as-built machine; `ros2 launch fs_hardware hardware.launch.py bus:=mock` runs it on a desk.
+bus: can0
+bitrate: 500000
+cycle_s: 0.01
+joints:
+  - {name: artic_roll_joint, node: 1, mode: sensor, counts_per_unit: 1043038, rated: 5000}
+  - {name: fl2_joint, node: 2, mode: velocity, counts_per_unit: 625823, rated: 250}
+  - {name: rl2_joint, node: 3, mode: velocity, counts_per_unit: 625823, rated: 250}
+  - {name: fr2_joint, node: 4, mode: velocity, counts_per_unit: 625823, rated: 250}
+  - {name: rr2_joint, node: 5, mode: velocity, counts_per_unit: 625823, rated: 250}
+  - {name: artic_yaw_joint, node: 6, mode: position, counts_per_unit: 1043038, rated: 20000}
+  - {name: arm_yaw_joint, node: 7, mode: position, counts_per_unit: 1043038, rated: 3000}
+  - {name: arm_shoulder_joint, node: 8, mode: position, counts_per_unit: 1043038, rated: 4000}
+  - {name: arm_elbow_joint, node: 9, mode: position, counts_per_unit: 1043038, rated: 3000}
+  - {name: arm_wrist_joint, node: 10, mode: position, counts_per_unit: 1043038, rated: 2000}
+  - {name: finger_l_joint, node: 11, mode: position, counts_per_unit: 100000, rated: 150}
+  - {name: finger_r_joint, node: 12, mode: position, counts_per_unit: 100000, rated: 150}
+  - {name: auger_feed_joint, node: 13, mode: velocity, counts_per_unit: 100000, rated: 20000, mock_contact: 0.2}
+  - {name: auger_spin_joint, node: 14, mode: velocity, counts_per_unit: 208608, rated: 3000}

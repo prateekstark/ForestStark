@@ -22,7 +22,7 @@ from ..ros_common import load_site, param, sim_now
 
 FIELDS = ["time_s", "robot", "id", "spot_id", "outcome", "tool", "reason", "species", "x", "y", "lat", "lon",
           "error_cm", "soil", "rock_depth_m", "hole_depth_m", "bore_energy_kj", "cycle_time_s", "water_l",
-          "region", "microsite", "method", "deviations"]
+          "region", "microsite", "method", "deviations", "survival_1y", "survival_risk"]
 
 
 class MissionLogger(Node):
@@ -60,7 +60,8 @@ class MissionLogger(Node):
                "error_cm": round(r.error_m * 100, 1), "soil": r.soil, "rock_depth_m": round(r.rock_depth_m, 3),
                "hole_depth_m": round(r.hole_depth_m, 3), "bore_energy_kj": round(r.bore_energy_kj, 2),
                "cycle_time_s": round(r.cycle_time_s, 1), "water_l": round(r.water_l, 2),
-               "region": r.region, "microsite": r.microsite, "method": r.method, "deviations": r.deviations}
+               "region": r.region, "microsite": r.microsite, "method": r.method, "deviations": r.deviations,
+               "survival_1y": round(r.survival_1y, 3), "survival_risk": r.survival_risk}
         self.records.append(row)
         self.csv.writerow(row)
         self.csv_f.flush()
@@ -91,6 +92,10 @@ class MissionLogger(Node):
             "energy_kj_per_plant": round(float(np.mean([r["bore_energy_kj"] for r in ok])) if ok else 0.0, 1),
             "cycle_s_mean": round(float(np.mean([r["cycle_time_s"] for r in ok])) if ok else 0.0, 1),
             "water_l": round(sum(r["water_l"] for r in rec), 1),
+            # expected trees alive after a year (fs_autonomy.survival), and the main risks
+            "survival_mean": round(float(np.mean([r["survival_1y"] for r in planted])) if planted else 0.0, 3),
+            "trees_expected_1y": round(sum(r["survival_1y"] for r in planted), 1),
+            "survival_risks": _count(r["survival_risk"] for r in planted if r["survival_risk"]),
             "utility_strikes": len(self.strikes), "by_robot": by_robot,
             "skip_reasons": _count(r["reason"] for r in rec if r["outcome"] == "skipped"),
             "tools": _count(r["tool"] for r in ok), "sim_minutes": round(span / 60, 1),

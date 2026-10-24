@@ -23,3 +23,5 @@ string region              # e.g. thar_arid
 string microsite           # e.g. saline patch, waterlogged, rocky slope
 string method              # what was done: pit, backfill, depth, catchment, mulch, water
 string deviations          # where the machine departed from the prescription, and why
+float64 survival_1y        # predicted first-year survival of this plant (fs_autonomy.survival), 0..1
+string survival_risk       # the main cause of expected loss when it matters: drought | waterlog | sodicity | shock

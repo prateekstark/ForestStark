@@ -1,0 +1,4 @@
+#!/usr/bin/env python3
+from fs_hardware.nodes import safety_bridge
+
+safety_bridge()

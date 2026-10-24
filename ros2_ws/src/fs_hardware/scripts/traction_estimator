@@ -1,0 +1,4 @@
+#!/usr/bin/env python3
+from fs_hardware.nodes import traction_estimator
+
+traction_estimator()

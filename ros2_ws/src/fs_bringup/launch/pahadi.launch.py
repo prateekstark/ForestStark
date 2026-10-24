@@ -13,6 +13,8 @@ Arguments
   rows, row_spacing, spacing, half_moon, speed, max_spots (0 = all)
   lidar       front safety lidar (true)
   people      safety scenarios: all (= cross,tool,stand) or a list; off by default
+  date        planting day MM-DD (soil moisture from the season's water balance)
+  ruts        keep | clear
   headless, rtf, rviz, seed, inspect
 """
 import os
@@ -26,7 +28,7 @@ from fs_bringup import sim
 
 ARGS = {"region": "", "slope": "", "soil": "", "rock_cover": "", "side": "downhill", "rows": "3",
         "row_spacing": "", "spacing": "", "half_moon": "true", "speed": "0.35", "max_spots": "0",
-        "headless": "false", "rtf": "1.0", "rviz": "true", "seed": "23", "lidar": "true", "log_dir": "", "inspect": "false", "people": ""}
+        "headless": "false", "rtf": "1.0", "rviz": "true", "seed": "23", "lidar": "true", "log_dir": "", "inspect": "false", "people": "", "date": "", "ruts": "keep"}
 
 CONTACTS = sim.PAHADI_CONTACTS
 
@@ -37,12 +39,12 @@ def setup(context):
     region, spacing, row_spacing = sim.region_setup("pahadi", "hill_slope", c)
     site_dir = sim.make_site("hill_slope", seed=seed, slope_deg=float(c["slope"]) if c["slope"] else None,
                              soil=c["soil"] or None, rock_cover=float(c["rock_cover"]) if c["rock_cover"] else None,
-                             region=region)
+                             region=region, date=c["date"] or None, ruts=c["ruts"] != "clear")
     site = sim.load_site_yaml(site_dir, "hill_slope")
     site_file = site_dir / "hill_slope.yaml"
     ns = "pahadi"
     common = {"site_file": str(site_file), "robot": ns, "use_sim_time": True}
-    head = sim.head_params("pahadi")
+    head = sim.head_params("pahadi", date=c["date"])
     lidar = sim.on(c["lidar"])
     actions = sim.gazebo(site_dir / "hill_slope.sdf", sim.on(c["headless"]), float(c["rtf"]))
     actions += sim.spawn_robot("pahadi", ns, site_dir, site, lidar, inspect=sim.on(c["inspect"]))

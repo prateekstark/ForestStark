@@ -52,7 +52,7 @@ class PahadiNavigator(Node):
         n_rows = int(param(self, "rows", 3))
         max_spots = int(param(self, "max_spots", 0))
         rows, spots = contour_plan(self.site, n_rows=n_rows, row_spacing=param(self, "row_spacing", 4.0),
-                                   spacing=param(self, "spacing", 2.5), reach=param(self, "reach", 1.25),
+                                   spacing=param(self, "spacing", 2.5), reach=param(self, "reach", 1.45),
                                    side=param(self, "side", "downhill"), seed=int(param(self, "seed", 1)))
         if max_spots > 0:
             spots = spots[:max_spots]

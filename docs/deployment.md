@@ -14,6 +14,9 @@ ros2 run fs_bringup interface_contract --out docs/hardware_interface.md
 | | Simulation (`<robot>.launch.py`) | Machine (`robot.launch.py`) |
 |---|---|---|
 | Plant, sensors, soil | Gazebo + fs_gazebo systems | the machine and its drivers |
+| Joint drives, wheels, tracks | Gazebo joint controllers, `fs::SwerveDrive`, DiffDrive | ros2_control: `fs_hardware/CanopenSystem` over CANopen CiA 402 (`hardware:=true`), with `hw_bridge` for joint commands, kinematics and odometry |
+| Auger, plugs, traction | `fs::AugerSoil`, `fs::PlugInventory`, `fs::Terramechanics` | `auger_driver` (phases from feed force and spin torque), `plug_inventory` (same carriers, with plug sensors), `traction_estimator` (slip against RTK speed) |
+| Certified safety layer | the safety monitor's PLC model (`plc_model`) | the safety PLC and scanners; `safety_bridge` reports them on `safety/hw` |
 | GNSS | `gnss_degrader` models RTK, float and dropouts | `gnss_degrader mode:=receiver` passes the receiver's fix through and reads its status |
 | Safety monitor, localization, planting head, traction monitor | same nodes, `use_sim_time` true | same nodes, wall clock |
 | Katar driver | simulated human (`katar_driver`) | the human driver, cued by the cab display |
@@ -45,6 +48,30 @@ sudo cp deploy/foreststark.service /etc/systemd/system/ && sudo systemctl enable
 Planting records (geotagged, one per spot, with the method, deviations and species) are written to
 `/data/fs_logs`. An operator laptop on the same network and `ROS_DOMAIN_ID` can run RViz with
 `rviz:=true`, or the operator tablet node.
+
+## Drives
+
+`fs_hardware/config/<robot>_can.yaml` maps every joint to its drive. Each entry gives the node id,
+mode (position, velocity or sensor), counts per metre or radian after the gearbox, and the rated
+torque or force. Set it to the as-built machine, then:
+
+```bash
+ros2 launch fs_hardware hardware.launch.py robot:=jaal bus:=mock    # on a desk: simulated drives
+sudo ip link set can0 up type can bitrate 500000
+ros2 launch fs_hardware hardware.launch.py robot:=jaal bus:=can0    # on the machine, autonomy off
+ros2 launch fs_bringup robot.launch.py robot:=jaal site_file:=... hardware:=true    # everything
+```
+
+On activation the drives are walked to "operation enabled" with every target held at the measured
+position. A drive in fault, or one that stops answering for 100 ms, makes the controller manager
+deactivate the whole system: drives go to "switched on" and brakes hold. Clearing the fault takes
+an operator, by restarting the hardware.
+
+## Calibration and safety
+
+- Weigh the machine, test the site soil and recalibrate the models: [calibration.md](calibration.md).
+- The certified safety layer to build, and its validation: [safety_concept.md](safety_concept.md).
+  Scanner field sets for the configuration tool: [safety_fields.md](safety_fields.md) and `safety_fields.yaml`.
 
 ## Commissioning checklist
 

@@ -85,7 +85,7 @@ def build() -> Robot:
     for tag in ("fl", "fr", "rl", "rr"):
         R.add(f"steer_{tag}_link", Part("fork", box(160, 120, 300), "graphite", hollow=0.4),
               Part("steer_motor", cyl(55, 120, at=(0, 0, 200)), "graphite"))
-        R.add(f"wheel_{tag}_link", *wheel_parts(380, 220, "graphite", lugs=10))
+        R.add(f"wheel_{tag}_link", *wheel_parts(380, 320, "graphite", lugs=10))
     R.add("drum_f_link", *drum_parts())
     R.add("drum_r_link", *drum_parts())
     R.add("picker_x_link",

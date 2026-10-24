@@ -15,8 +15,8 @@ class ArmGeometry:
     base_x: float = 0.25        # arm base in base_link, m
     base_y: float = 0.0
     shoulder_z: float = 0.85    # shoulder axis height above base_link
-    l1: float = 0.85            # upper arm
-    l2: float = 0.85            # forearm
+    l1: float = 1.00            # upper arm
+    l2: float = 1.00            # forearm
     tool: float = 0.50          # wrist axis to bit tip with the feed retracted
     grip_x: float = 0.07        # grasp point (root-ball centre) in arm_wrist_link, gripper mode
     grip_z: float = -0.18

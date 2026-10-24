@@ -13,6 +13,7 @@
   <exec_depend>ros_gz_sim</exec_depend>
   <exec_depend>ros_gz_bridge</exec_depend>
   <exec_depend>robot_state_publisher</exec_depend>
+  <exec_depend>fs_hardware</exec_depend>
   <exec_depend>rviz2</exec_depend>
   <exec_depend>fs_gazebo</exec_depend>
   <exec_depend>fs_description</exec_depend>

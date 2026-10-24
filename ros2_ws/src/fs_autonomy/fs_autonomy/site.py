@@ -42,9 +42,11 @@ class SoilMap:
                 self.nx, self.ny = int(rest[0]), int(rest[1])
             elif key == "soil":
                 idx, name, *v = rest
-                n, kc, kphi, c, phi, K, eb = map(float, v)
-                self.soils.append({"index": int(idx), "name": name, "n": n, "kc": kc, "kphi": kphi, "c": c,
-                                   "phi": phi, "K": K, "eb": eb})
+                n, kc, kphi, c, phi, K, eb = map(float, v[:7])
+                soil = {"index": int(idx), "name": name, "n": n, "kc": kc, "kphi": kphi, "c": c, "phi": phi, "K": K, "eb": eb}
+                if len(v) >= 11:   # moisture response, calibrated or from the table
+                    soil.update(zip(("ref_moisture", "wet_softening", "capillary_c", "true_cohesion"), map(float, v[7:11])))
+                self.soils.append(soil)
             elif key == "layer":
                 block = " ".join(lines[i:i + self.ny])
                 self.layers[rest[0]] = np.array(block.split(), dtype=float).reshape(self.ny, self.nx)

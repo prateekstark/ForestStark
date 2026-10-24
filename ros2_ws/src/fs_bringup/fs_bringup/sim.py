@@ -65,7 +65,9 @@ def region_setup(kind: str, site: str, c: dict) -> tuple:
 
 def make_site(site: str, **kw) -> Path:
     from fs_gazebo.sites import generate
-    key = hashlib.sha1(json.dumps(kw, sort_keys=True).encode()).hexdigest()[:8]
+    # the date and whether to keep ruts change the season, not the site: same directory, same ruts
+    key = hashlib.sha1(json.dumps({k: v for k, v in kw.items() if k not in ("date", "ruts")},
+                                  sort_keys=True).encode()).hexdigest()[:8]
     out = Path(os.environ.get("FS_SITES_DIR", Path.home() / ".ros" / "fs_sites")) / f"{site}-{key}"
     generate(site, out, **kw)
     return out
@@ -109,12 +111,24 @@ def _stop_gazebo(context, *args, **kwargs):
 
 def apply_inertials(urdf_xml: str, kind: str) -> str:
     """Replace each link's inertial with the one computed from the CAD (fs_description/config/<kind>_inertials.yaml,
-    written by cad/build.py): mass, centre of mass and full inertia tensor, with payload."""
+    written by cad/build.py): mass, centre of mass and full inertia tensor, with payload. Where the machine
+    has been weighed (`calibrate weights`, <calibration dir>/<kind>_mass.yaml) masses are scaled and the
+    CoM moved to match the scales."""
     import xml.etree.ElementTree as ET
+    import numpy as np
+    from fs_gazebo.sites import calibration_dir
     path = Path(get_package_share_directory("fs_description")) / "config" / f"{kind}_inertials.yaml"
     if not path.exists():
         return urdf_xml
     data = yaml.safe_load(path.read_text()) or {}
+    cal = calibration_dir() / f"{kind}_mass.yaml"
+    if cal.exists():
+        from fs_bringup.calibration import apply_mass
+        keys = ("ixx", "ixy", "ixz", "iyy", "iyz", "izz")
+        links = {n: dict(m=d["mass"], c=d["com"], I=[d[k] for k in keys]) for n, d in data.items() if isinstance(d, dict)}
+        fixed = apply_mass(links, yaml.safe_load(cal.read_text()) or {})
+        data = {n: dict(mass=v["m"], com=[float(x) for x in v["c"]], **dict(zip(keys, map(float, np.ravel(v["I"])))))
+                for n, v in fixed.items()}
     root = ET.fromstring(urdf_xml)
     for link in root.iter("link"):
         d = data.get(link.get("name"))
@@ -140,18 +154,44 @@ def robot_description(kind: str, ns: str, soil_map: Path, lidar: bool, gnss_sigm
                                                   "gnss_sigma": str(gnss_sigma),
                                                   "inspect_cam": "true" if inspect else "false",
                                                   **(xacro_args or {})})
-    return apply_inertials(doc.toxml(), kind)
+    return root_inertia_to_child(apply_inertials(doc.toxml(), kind))
+
+
+def root_inertia_to_child(urdf_xml: str) -> str:
+    """KDL (robot_state_publisher) cannot use an inertia on the root link, so it is moved onto a child
+    link, base_inertia, on a fixed joint at the same origin. Gazebo merges fixed joints back into
+    base_link, so the physics is unchanged, and every node that sums the masses still sees them all."""
+    import xml.etree.ElementTree as ET
+    root = ET.fromstring(urdf_xml)
+    children = {j.find("child").get("link") for j in root.findall("joint")}
+    for link in root.findall("link"):
+        if link.get("name") in children:
+            continue
+        inertial = link.find("inertial")
+        if inertial is None:
+            continue
+        link.remove(inertial)
+        name = f"{link.get('name')}_inertia"
+        child = ET.SubElement(root, "link", name=name)
+        child.append(inertial)
+        j = ET.SubElement(root, "joint", name=f"{name}_joint", type="fixed")
+        ET.SubElement(j, "parent", link=link.get("name"))
+        ET.SubElement(j, "child", link=name)
+        ET.SubElement(j, "origin", xyz="0 0 0", rpy="0 0 0")
+    return ET.tostring(root, encoding="unicode")
 
 
 def spawn_robot(kind: str, ns: str, site_dir: Path, site: dict, lidar: bool, inspect: bool = False,
                 xacro_args: dict | None = None):
     pose = next(s for s in site["spawn"] if s["name"] == ns)
     desc = robot_description(kind, ns, site_dir / site["soil_map"], lidar, inspect=inspect, xacro_args=xacro_args)
+    urdf = site_dir / f"{ns}.urdf"
+    urdf.write_text(desc)
     return [
         Node(package="robot_state_publisher", executable="robot_state_publisher", namespace=ns, output="log",
              parameters=[{"robot_description": desc, "frame_prefix": f"{ns}/", "use_sim_time": True}]),
         Node(package="ros_gz_sim", executable="create", output="log",
-             arguments=["-world", site["name"], "-topic", f"/{ns}/robot_description", "-name", ns,
+             arguments=["-world", site["name"], "-file", str(urdf), "-name", ns,
                         "-x", str(pose["x"]), "-y", str(pose["y"]), "-z", str(pose["z"]), "-Y", str(pose["yaw"])]),
     ]
 
@@ -204,8 +244,11 @@ def robot_core(kind: str, ns: str, site_file: Path, world: str, head: dict, gnss
     return [
         # restarted if it ever dies; until it is back nothing reaches the wheels (the drive's
         # command timeout stops the robot), so a crash fails safe
+        # plc_model: in simulation the monitor also runs the certified layer's logic (fs_autonomy.safety_fields);
+        # on a machine the real safety PLC reports on safety/hw through fs_hardware safety_bridge
         Node(package="fs_autonomy", executable="safety_monitor", namespace=ns, output="screen", respawn=True,
-             respawn_delay=1.0, parameters=[{**common, "robot_type": kind, "scans": scans, "peers": list(peers) or [""]}]),
+             respawn_delay=1.0, parameters=[{**common, "robot_type": kind, "scans": scans, "peers": list(peers) or [""],
+                                             "plc_model": sim_time}]),
         Node(package="fs_autonomy", executable="gnss_degrader", namespace=ns, output="screen",
              parameters=[{**common, "mode": gnss_mode, "dropouts_per_hour": float(dropouts), "seed": seed}]),
         Node(package="fs_autonomy", executable="localization", namespace=ns, output="screen",

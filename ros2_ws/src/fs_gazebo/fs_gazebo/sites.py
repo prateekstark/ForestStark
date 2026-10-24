@@ -31,7 +31,7 @@ from pathlib import Path
 import numpy as np
 import yaml
 
-from . import regions
+from . import climate, regions
 
 # Bekker constants (Wong) + specific boring energy, MJ/m^3. Same table as SoilModel.hh.
 SOILS = [
@@ -42,6 +42,30 @@ SOILS = [
     ("lateritic_gravel", 0.80, 30.00, 4000.00, 10.00, 35.0, 0.015, 22.0),
 ]
 SOIL_INDEX = {s[0]: i for i, s in enumerate(SOILS)}
+# moisture response (SoilModel.hh DefaultSoils): reference moisture, softening, capillary c kPa, true share of c
+SOIL_MOISTURE = {"dry_sand": (0.05, 0.0, 3.0, 0.0), "sandy_loam": (0.15, 4.0, 0.5, 0.6),
+                 "clayey_soil": (0.20, 6.0, 0.0, 1.0), "heavy_clay": (0.25, 8.0, 0.0, 1.0),
+                 "lateritic_gravel": (0.10, 2.0, 0.0, 0.5)}
+SOIL_KEYS = ("n", "kc", "kphi", "c", "phi", "K", "eb", "ref_moisture", "wet_softening", "capillary_c", "true_cohesion")
+
+
+def calibration_dir() -> Path:
+    """Where `ros2 run fs_bringup calibrate` writes what it fitted to the real machine and site."""
+    import os
+    return Path(os.environ.get("FS_CALIBRATION_DIR", Path.home() / ".ros" / "fs_calibration"))
+
+
+def soil_rows() -> list:
+    """The soil table written into every soil map: the published constants with their moisture
+    response, overridden soil by soil by the calibration directory's soils.yaml."""
+    path = calibration_dir() / "soils.yaml"
+    cal = (yaml.safe_load(path.read_text()) or {}) if path.exists() else {}
+    rows = []
+    for s in SOILS:
+        row = dict(zip(SOIL_KEYS, tuple(s[1:]) + SOIL_MOISTURE[s[0]]))
+        row.update({k: float(v) for k, v in cal.get(s[0], {}).items() if k in SOIL_KEYS})
+        rows.append((s[0],) + tuple(row[k] for k in SOIL_KEYS))
+    return rows
 
 ORIGINS = {   # WGS84 origin of each site's map frame (ENU)
     "roadside": (26.9124, 75.7873, 431.0),     # district road near Jaipur
@@ -82,7 +106,7 @@ class Grid:
             f.write("# fs_soilmap v1\n")
             f.write(f"name {name}\norigin {self.x0:.4f} {self.y0:.4f}\nresolution {self.res:.6f}\n")
             f.write(f"size {self.nx} {self.ny}\n")
-            for i, s in enumerate(SOILS):
+            for i, s in enumerate(soil_rows()):     # 7 Bekker / boring constants, then 4 moisture ones
                 f.write(f"soil {i} " + " ".join(str(v) for v in s) + "\n")
             for lname, fmt in (("elevation", "%.3f"), ("soil", "%d"), ("rock_depth", "%.3f"), ("moisture", "%.3f"),
                                ("hardpan", "%.2f"), ("esp", "%.1f"), ("waterlog", "%.2f")):
@@ -109,6 +133,52 @@ def write_terrain_obj(path: Path, X: np.ndarray, Y: np.ndarray, Z: np.ndarray, r
     path.write_text("\n".join(lines) + "\n")
     r, g, bl = rgb
     mtl.write_text(f"newmtl soil\nKa {r * .5:.3f} {g * .5:.3f} {bl * .5:.3f}\nKd {r} {g} {bl}\nKs 0.02 0.02 0.02\nNs 5\n")
+
+
+def load_ruts(path: Path):
+    """Ruts left by earlier runs on this site (written by fs::Terramechanics): cell size and an
+    array of rows x, y, depth (m)."""
+    if not path.exists():
+        return 0.1, np.zeros((0, 3))
+    cell, rows = 0.1, []
+    for line in path.read_text().splitlines():
+        if line.startswith("cell"):
+            cell = float(line.split()[1])
+        elif line and not line.startswith("#"):
+            rows.append([float(v) for v in line.split()[:3]])
+    return cell, np.array(rows).reshape(-1, 3)
+
+
+def rut_layer(X, Y, res, cell, ruts):
+    """Mean rut depth over each grid cell (a 0.1 m rut on a 0.375 m grid lowers it by its share)."""
+    out = np.zeros(X.shape)
+    if not len(ruts):
+        return out
+    x0, y0 = X[0, 0], Y[0, 0]
+    i = np.clip(np.round((ruts[:, 1] - y0) / res).astype(int), 0, X.shape[0] - 1)
+    j = np.clip(np.round((ruts[:, 0] - x0) / res).astype(int), 0, X.shape[1] - 1)
+    np.add.at(out, (i, j), ruts[:, 2] * cell * cell / (res * res))
+    return np.minimum(out, ruts[:, 2].max())
+
+
+def rut_visual(out: Path, name: str, cell, ruts, ground=lambda x, y: 0.0, min_depth=0.004):
+    """Visual-only strips of darker, pressed soil where the wheels went: one quad per rut cell."""
+    keep = ruts[ruts[:, 2] >= min_depth] if len(ruts) else ruts
+    if not len(keep):
+        return ""
+    path = (out / f"{name}_ruts.obj").resolve()
+    h = cell / 2
+    v, f = [], []
+    for k, (x, y, d) in enumerate(keep):
+        z = ground(x, y) + 0.003
+        v += [f"v {x - h:.3f} {y - h:.3f} {z:.3f}", f"v {x + h:.3f} {y - h:.3f} {z:.3f}",
+              f"v {x + h:.3f} {y + h:.3f} {z:.3f}", f"v {x - h:.3f} {y + h:.3f} {z:.3f}"]
+        b = 4 * k + 1
+        f += [f"f {b} {b + 1} {b + 2}", f"f {b} {b + 2} {b + 3}"]
+    path.with_suffix(".mtl").write_text("newmtl rut\nKa 0.2 0.17 0.12\nKd 0.36 0.30 0.22\nKs 0 0 0\n")
+    path.write_text("\n".join([f"mtllib {path.with_suffix('.mtl').name}", "o ruts", "usemtl rut"] + v + f) + "\n")
+    return (f"    <model name='ruts'><static>true</static><link name='l'><visual name='v'><cast_shadows>false</cast_shadows>"
+            f"<geometry><mesh><uri>file://{path}</uri></mesh></geometry></visual></link></model>\n")
 
 
 def write_png16(path: Path, img: np.ndarray):
@@ -207,9 +277,12 @@ def world_header(name, origin, step=0.004):
 """
 
 
-def region_layers(g, X, Y, R: "regions.RegionSite", seed, soil_idx=None, keep=None, moisture=True, gradient=None):
+def region_layers(g, X, Y, R: "regions.RegionSite", seed, soil_idx=None, keep=None, moisture=True, gradient=None,
+                  date=None):
     """Write a region's secondary soils, moisture, waterlogging, sodicity and kankar pan into the grid.
-    keep: mask of cells whose soil must not change (a compacted road shoulder)."""
+    keep: mask of cells whose soil must not change (a compacted road shoulder). date ('MM-DD'): the
+    moisture of each soil on that day from the season's water balance (fs_gazebo.climate) instead
+    of the region's planting-time mean."""
     def patches(share, salt, scale=0.06):
         n = smooth_noise(X * scale + 3.1 * salt, Y * scale - 1.7 * salt, seed + 20 + salt)
         thr = np.quantile(n, 1.0 - share) if share > 0 else np.inf
@@ -226,7 +299,14 @@ def region_layers(g, X, Y, R: "regions.RegionSite", seed, soil_idx=None, keep=No
     g.layers["waterlog"] = wl
     if moisture:
         mean, spread = R.moisture
-        m = mean + spread * smooth_noise(X * 0.04, Y * 0.04, seed + 3) + 0.14 * wl
+        if date:
+            idx = soil_idx if soil_idx is not None else np.full(X.shape, SOIL_INDEX[R.soil])
+            base = np.zeros(X.shape)
+            for k in np.unique(idx):
+                base[idx == k] = climate.moisture_on(R.name, SOILS[k][0], date, seed)
+            m = base + 0.5 * spread * smooth_noise(X * 0.04, Y * 0.04, seed + 3) + 0.14 * wl
+        else:
+            m = mean + spread * smooth_noise(X * 0.04, Y * 0.04, seed + 3) + 0.14 * wl
         if gradient is not None:
             m = m + gradient
         g.layers["moisture"] = np.clip(m, 0.02, 0.4)
@@ -282,7 +362,7 @@ def shoulder_y(x):
     return 6.0 * np.sin(x / 45.0) + 2.5 * np.sin(x / 19.0 + 1.0)
 
 
-def build_roadside(out: Path, seed=7, soil=None, spacing=3.0, region=None):
+def build_roadside(out: Path, seed=7, soil=None, spacing=3.0, region=None, date=None, ruts=True):
     name = "roadside"
     R = regions.get(region, name)
     soil = soil or R.soil
@@ -330,7 +410,8 @@ def build_roadside(out: Path, seed=7, soil=None, spacing=3.0, region=None):
     if baseline:
         soil_idx[(X > 150) & (X < 225)] = SOIL_INDEX["clayey_soil"]
         soil_idx[(X > 280) & (X < 335) & (n1 > 0.0)] = SOIL_INDEX["lateritic_gravel"]
-    region_layers(g, X, Y, R, seed, soil_idx=None if baseline else soil_idx, keep=shoulder, moisture=not baseline)
+    region_layers(g, X, Y, R, seed, soil_idx=None if baseline else soil_idx, keep=shoulder, moisture=not baseline or bool(date),
+                  date=date)
     if R.name == "ignp_canal":
         # IGNP roads run beside canals: seepage waterlogs a stretch of the verge near the start of the line
         seep = np.clip(1.0 - np.abs(X - 26.0) / 9.0, 0, 1) * (lateral > 1.4)
@@ -340,7 +421,7 @@ def build_roadside(out: Path, seed=7, soil=None, spacing=3.0, region=None):
     g.layers["soil"] = soil_idx
     mean, spread = R.rock_depth
     g.layers["rock_depth"] = np.clip(mean + spread * n1, 0.45, 1.8)
-    if baseline:
+    if baseline and not date:
         g.layers["moisture"] = np.clip(0.14 + 0.06 * smooth_noise(X * 0.03, Y * 0.03, seed + 1), 0.04, 0.35)
     g.write(out / f"{name}.soilmap", name)
 
@@ -348,6 +429,8 @@ def build_roadside(out: Path, seed=7, soil=None, spacing=3.0, region=None):
     parts = [world_header(name, R.origin), ground_plane((0.60, 0.58, 0.38) if baseline else R.ground_rgb),
              region_visuals(X, Y, {k: np.where(lateral > 1.6, v, 0) for k, v in g.layers.items() if k in ("esp", "waterlog")},
                             rng)]
+    if ruts:   # flat site: the ground plane stays the physics surface, the ruts are seen, and remembered by the soil
+        parts.append(rut_visual(out, name, *load_ruts(out / f"{name}.soilmap.ruts")))
     vis = []
     for i in range(len(cl) - 1):
         a, b = cl[i], cl[i + 1]
@@ -404,7 +487,7 @@ def build_roadside(out: Path, seed=7, soil=None, spacing=3.0, region=None):
 
 
 # =========================================================================== open field (Jaal)
-def build_open_field(out: Path, seed=11, soil=None, fleet=3, region=None):
+def build_open_field(out: Path, seed=11, soil=None, fleet=3, region=None, date=None, ruts=True):
     name = "open_field"
     R = regions.get(region, name)
     soil = soil or R.soil
@@ -435,7 +518,7 @@ def build_open_field(out: Path, seed=11, soil=None, fleet=3, region=None):
     if baseline:
         soil_idx[(n1 > 0.45)] = SOIL_INDEX["clayey_soil"]
         soil_idx[(n1 < -0.55)] = SOIL_INDEX["dry_sand"]
-    region_layers(g, X, Y, R, seed, soil_idx=None if baseline else soil_idx, moisture=not baseline)
+    region_layers(g, X, Y, R, seed, soil_idx=None if baseline else soil_idx, moisture=not baseline or bool(date), date=date)
     g.layers["soil"] = soil_idx
     mean, spread = R.rock_depth
     rock = np.clip(mean - 0.1 + 0.35 * n1 * spread / 0.3, 0.35, 1.8)
@@ -444,12 +527,14 @@ def build_open_field(out: Path, seed=11, soil=None, fleet=3, region=None):
             m = (X - o["x"]) ** 2 + (Y - o["y"]) ** 2 < (o["r"] + 0.05) ** 2
             rock[m] = 0.03
     g.layers["rock_depth"] = rock
-    if baseline:
+    if baseline and not date:
         g.layers["moisture"] = np.clip(0.11 + 0.05 * smooth_noise(X * 0.04, Y * 0.04, seed + 3), 0.03, 0.3)
     g.write(out / f"{name}.soilmap", name)
 
     parts = [world_header(name, R.origin), ground_plane((0.66, 0.60, 0.42) if baseline else R.ground_rgb),
              region_visuals(X, Y, g.layers, rng)]
+    if ruts:
+        parts.append(rut_visual(out, name, *load_ruts(out / f"{name}.soilmap.ruts")))
     # field boundary posts
     m = 2.5   # survey posts stand clear of the headland lanes
     for k, (x, y) in enumerate([(fx0 - m, fy0 - m), (fx1 + m, fy0 - m), (fx1 + m, fy1 + m), (fx0 - m, fy1 + m)]):
@@ -504,7 +589,8 @@ def hill_height(X, Y, slope_deg, seed):
     return base + rough + gully
 
 
-def build_hill_slope(out: Path, seed=23, slope_deg=None, soil=None, rock_cover=None, region=None):
+def build_hill_slope(out: Path, seed=23, slope_deg=None, soil=None, rock_cover=None, region=None, date=None,
+                     ruts=True):
     name = "hill_slope"
     R = regions.get(region, name)
     slope_deg = R.slope_deg if slope_deg is None else slope_deg
@@ -516,6 +602,8 @@ def build_hill_slope(out: Path, seed=23, slope_deg=None, soil=None, rock_cover=N
     g = Grid(-size / 2, -size / 2, res, px, px)
     X, Y = g.coords()
     H = hill_height(X, Y, slope_deg, seed)
+    rcell, rut_rows = load_ruts(out / f"{name}.soilmap.ruts") if ruts else (0.1, np.zeros((0, 3)))
+    H = H - rut_layer(X, Y, res, rcell, rut_rows)   # earlier runs' ruts shape the terrain (heightmap, mesh, map)
     hmin, hmax = float(H.min()), float(H.max())
     g.layers["elevation"] = H
     # Depth to rock: deep soil, a stony band (pick needed) and outcrops (seed balls only), with
@@ -532,7 +620,7 @@ def build_hill_slope(out: Path, seed=23, slope_deg=None, soil=None, rock_cover=N
     soil_idx = np.full(X.shape, SOIL_INDEX[soil])
     soil_idx[(smooth_noise(X * 0.09, Y * 0.09, seed + 2) > 0.5) & (nrock < thr)] = SOIL_INDEX["sandy_loam"]
     g.layers["soil"] = soil_idx
-    region_layers(g, X, Y, R, seed, soil_idx=soil_idx, gradient=-0.002 * Y)   # wetter downslope, mean unchanged
+    region_layers(g, X, Y, R, seed, soil_idx=soil_idx, gradient=-0.002 * Y, date=date)   # wetter downslope
     g.write(out / f"{name}.soilmap", name)
 
     # Heightmap image: Gazebo puts image row 0 at +y (north). Values span the full 16-bit range.
@@ -553,6 +641,10 @@ def build_hill_slope(out: Path, seed=23, slope_deg=None, soil=None, rock_cover=N
     mesh = (out / f"{name}_terrain.obj").resolve()
     write_terrain_obj(mesh, X, Y, H - hmin, rgb=R.ground_rgb)
     parts = [world_header(name, R.origin)]
+    if ruts:
+        def on_mesh(x, y):   # the rut-lowered terrain, nearest grid vertex
+            return float(H[int(np.clip(round((y - Y[0, 0]) / res), 0, px - 1)), int(np.clip(round((x - X[0, 0]) / res), 0, px - 1))])
+        parts.append(rut_visual(out, name, rcell, rut_rows, on_mesh))
     # DART ignores <heightmap><pos>; lift the whole model by hmin instead (honoured by physics and rendering).
     parts.append(f"""    <model name="terrain">
       <static>true</static>
